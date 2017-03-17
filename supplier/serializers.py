@@ -1,11 +1,17 @@
 from rest_framework import serializers
 
-from supplier.models import Product, Vendor, Category, ProductImage, ProductImageMap
+from supplier.models import Product, Vendor, Category, ProductImage, ProductImageMap, VendorProductLine
 
 
 class VendorSerializer(serializers.ModelSerializer):
     class Meta:
         model = Vendor
+        fields = ('id', 'name',)
+
+
+class VendorProductLineSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = VendorProductLine
         fields = ('id', 'name',)
 
 
@@ -39,6 +45,7 @@ class ProductImageSerializer(serializers.ModelSerializer):
 
 class ProductSerializer(serializers.ModelSerializer):
     vendor = VendorSerializer(read_only=True)
+    vendor_product_line = VendorProductLineSerializer(read_only=True)
     sub_category = serializers.SerializerMethodField()
     category = serializers.SerializerMethodField()
     can_drop_ship = serializers.SerializerMethodField()
@@ -67,4 +74,5 @@ class ProductSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Product
-        fields = ('internal_part_num', 'vendor_part_num', 'description', 'overview', 'cost','retail_price', 'jobber_price', 'min_price', 'core_charge', 'can_drop_ship', 'drop_ship_fee', 'vendor', 'category', 'sub_category', 'images',)
+        fields = (
+        'internal_part_num', 'vendor_part_num', 'description', 'overview', 'cost', 'retail_price', 'jobber_price', 'min_price', 'core_charge', 'can_drop_ship', 'drop_ship_fee', 'vendor', 'vendor_product_line', 'category', 'sub_category', 'images',)

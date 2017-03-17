@@ -110,7 +110,7 @@ class VendorViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 def import_products(request):
-    Turn14DataImporter().import_and_store_product_data()
+    Turn14DataImporter().import_and_store_product_data(refresh_all=True)
     return HttpResponse("Doing work!")
 
 

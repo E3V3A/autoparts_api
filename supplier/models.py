@@ -15,6 +15,14 @@ class Vendor(Base):
     name = models.CharField(max_length=50, unique=True, db_index=True)
 
 
+class VendorProductLine(Base):
+    name = models.CharField(max_length=150, db_index=True)
+    vendor = models.ForeignKey(Vendor, on_delete=models.CASCADE, db_index=True)
+
+    class Meta:
+        unique_together = ("name", "vendor",)
+
+
 class Category(Base):
     name = models.CharField(max_length=50, db_index=True)
     parent_category = models.ForeignKey('self', on_delete=models.CASCADE, null=True, related_name='parent', db_index=True)
@@ -44,6 +52,7 @@ class Product(Base):
     can_drop_ship = models.IntegerField(choices=DROPSHIP_CHOICES, default=NEVER_DROPSHIP, db_index=True)
     drop_ship_fee = models.DecimalField(max_digits=5, decimal_places=2, null=True, db_index=True)
     vendor = models.ForeignKey(Vendor, on_delete=models.CASCADE, db_index=True)
+    vendor_product_line = models.ForeignKey(VendorProductLine, on_delete=models.CASCADE, db_index=True, null=True)
     category = models.ForeignKey(Category, on_delete=models.CASCADE, null=True, db_index=True)
 
     @staticmethod

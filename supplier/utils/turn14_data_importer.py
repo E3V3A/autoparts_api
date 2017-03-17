@@ -17,7 +17,7 @@ from lxml import html
 from requests import HTTPError
 from requests import RequestException
 from requests.adapters import HTTPAdapter
-from supplier.models import Product, Vendor, Category, ProductImage, ProductImageMap
+from supplier.models import Product, Vendor, Category, ProductImage, ProductImageMap, VendorProductLine
 
 logger = logging.getLogger(__name__)
 
@@ -99,10 +99,14 @@ class Turn14DataStorage:
 
     @transaction.atomic
     def save(self):
-        vendor_name = self.data_item["PrimaryVendor"]
+        vendor = Vendor.objects.get_or_create(name=self.data_item["PrimaryVendor"])[0]
         product_args = {
-            'vendor': Vendor.objects.get_or_create(name=vendor_name)[0]
+            'vendor': vendor
         }
+        product_line = None
+        if self.data_item['product_line']:
+            product_line = VendorProductLine.objects.get_or_create(vendor=vendor, name=self.data_item['product_line'])[0]
+        product_args['vendor_product_line'] = product_line
         for key, value in self.data_item.items():
             if key in self.product_data_mapping:
                 data_mapper = self.product_data_mapping[key]
@@ -181,6 +185,7 @@ class Turn14DataStorage:
             return Decimal(fee.group(0))
         return None
 
+
 class Turn14DataImporter:
     PRODUCT_URL = "https://www.turn14.com/export.php"
     SEARCH_URL = "https://www.turn14.com/search/index.php"
@@ -206,6 +211,7 @@ class Turn14DataImporter:
         csv_results = dict()
         future_results = dict()
         num_retries = kwargs['num_retries'] if 'num_retries' in kwargs else 0
+        refresh_all = kwargs['refresh_all'] if 'refresh_all' in kwargs else False
 
         def store_results():
             try:
@@ -230,7 +236,7 @@ class Turn14DataImporter:
                         with futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
                             for data_row in csv.DictReader(csv_file):
                                 internal_part_num = data_row['InternalPartNumber']
-                                if not Turn14DataStorage.product_exists(internal_part_num):
+                                if refresh_all or not Turn14DataStorage.product_exists(internal_part_num):
                                     csv_results[internal_part_num] = data_row
                                     future_results[executor.submit(self._get_part_data, internal_part_num, session)] = internal_part_num
                                     if len(future_results) == self.max_workers:
@@ -239,7 +245,7 @@ class Turn14DataImporter:
         except:
             if num_retries < self.max_retries:
                 logger.error("Retrying parse and store due to error", exc_info=1)
-                self.import_and_store_product_data(num_retries=num_retries + 1)
+                self.import_and_store_product_data(refresh_all=refresh_all, num_retries=num_retries + 1)
             else:
                 raise
 
@@ -263,43 +269,12 @@ class Turn14DataImporter:
         logger.info("Getting part data for part_num {0} @ {1}".format(part_num, part_search_url))
         part_search_response = do_request(session, "get", part_search_url)
         part_search_html = html.fromstring(part_search_response.content.decode("utf-8", errors="ignore"))
-        item_search = part_search_html.xpath('//div[@data-itemcode]')
-        part_data = {
-            'item_code': 0,
-            'is_valid_item': False
-        }
-        if item_search:
-            item_html = item_search[0]
-            attributes = item_html.attrib
-            item_code = attributes['data-itemcode']
-            # Skip group buys
-            if item_code.isnumeric() and not 'data-productgroup' in attributes:
-                cost_search = item_html.cssselect("p.amount")
-                cost = None
-                if cost_search:
-                    cost = cost_search[0].text.replace("$", "")
-
-                    primary_image_search = item_html.cssselect("img.product-info")
-                primary_img_thumb = ""
-                if primary_image_search:
-                    primary_img_thumb = primary_image_search[0].attrib['src']
-                part_url = "{0}&itemCode={1}".format(self.PART_URL, item_code)
-                logger.info(
-                    "Getting part details for part_num {0}, item_code {1} @ {2}".format(part_num, item_code, part_url))
-                part_detail_response = do_request(session, "get", part_url)
-                part_detail_html = html.fromstring(part_detail_response.content.decode("utf-8", errors="ignore"))
-                fitment_data = self._parse_fitment(part_detail_html)
-                part_data['category'] = fitment_data['category']
-                part_data['sub_category'] = fitment_data['sub_category']
-                part_data['fitment'] = fitment_data['fitment']
-
-                part_data['images'] = self._parse_images(part_detail_html, primary_img_thumb)
-                part_data['overview'] = self._parse_overview(part_detail_html)
-                part_data['item_code'] = item_code
-                part_data['is_valid_item'] = True
-                part_data['cost'] = cost
-            else:
-                logger.info("Skipping part num {0} because it is a group buy".format(part_num))
+        part_search_data = self._parse_item_data_from_search(part_search_html)
+        part_data = dict()
+        if part_search_data['is_valid_item']:
+            part_data = {**part_search_data, **self._parse_item_data_from_detail(part_search_data['item_code'], part_search_data['primary_img_thumb'], session)}
+        else:
+            logger.info("Skipping part num {0} because it is a group buy".format(part_num))
         return part_data
 
     def _parse_images(self, part_detail_html, primary_img_thumb):
@@ -322,11 +297,58 @@ class Turn14DataImporter:
             images.insert(0, primary_img_group)
         return images
 
-    def _parse_overview(self, part_detail_html):
-        overview_el = part_detail_html.cssselect("p.prod-overview")
-        if overview_el:
-            return overview_el[0].text
-        return ""
+    def _parse_item_data_from_search(self, part_search_html):
+        item_search = part_search_html.xpath('//div[@data-itemcode]')
+        part_data = {
+            'item_code': 0,
+            'is_valid_item': False
+        }
+        if item_search:
+            item_html = item_search[0]
+            item_code = item_html.attrib['data-itemcode']
+            # Skip group buys
+            if item_code.isnumeric() and not 'data-productgroup' in item_html.attrib:
+                cost_search = item_html.cssselect("p.amount")
+                cost = None
+                if cost_search:
+                    cost = cost_search[0].text.replace("$", "").strip()
+
+                primary_image_search = item_html.cssselect("img.product-info")
+                primary_img_thumb = None
+                if primary_image_search:
+                    primary_img_thumb = primary_image_search[0].attrib['src']
+
+                product_line_search = part_search_html.xpath("//a[contains(@href,'vmmProductLine')]")
+                product_line = None
+                if product_line_search:
+                    product_line = product_line_search[0].text.strip()
+
+                part_data['is_valid_item'] = True
+                part_data['item_code'] = item_code.strip()
+                part_data['cost'] = cost
+                part_data['primary_img_thumb'] = primary_img_thumb
+                part_data['product_line'] = product_line
+        return part_data
+
+    def _parse_item_data_from_detail(self, item_code, primary_img_thumb, session):
+        part_detail_data = dict()
+        part_url = "{0}&itemCode={1}".format(self.PART_URL, item_code)
+        logger.info("Getting part details for item_code {0} @ {1}".format(item_code, part_url))
+        part_detail_response = do_request(session, "get", part_url)
+        part_detail_html = html.fromstring(part_detail_response.content.decode("utf-8", errors="ignore"))
+        overview_search = part_detail_html.cssselect("p.prod-overview")
+        overview = ""
+        if overview_search:
+            overview = overview_search[0].text
+
+        fitment_data = self._parse_fitment(part_detail_html)
+        part_detail_data['category'] = fitment_data['category']
+        part_detail_data['sub_category'] = fitment_data['sub_category']
+        part_detail_data['fitment'] = fitment_data['fitment']
+
+        part_detail_data['images'] = self._parse_images(part_detail_html, primary_img_thumb)
+        part_detail_data['overview'] = overview
+        return part_detail_data
 
     def _parse_fitment(self, part_detail_html):
         fitment_sections = part_detail_html.cssselect("li.list-group-item-info")
