@@ -82,7 +82,7 @@ class ImageStorage(FileSystemStorage):
 class ProductImage(Base):
     # image_file = models.ImageField(upload_to="products/", max_length=150, storage=ImageStorage(), db_index=True)
     remote_image_file = models.CharField(max_length=150, db_index=True)
-
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, db_index=True, related_name="images")
     """
     below for handling duplicates
 
@@ -90,8 +90,3 @@ class ProductImage(Base):
         ProductImage.objects.filter(image_file=self.image_file).delete()
         super(ProductImage, self).save(*args, **kwargs)
     """
-
-
-class ProductImageMap(Base):
-    image = models.ForeignKey(ProductImage, on_delete=models.CASCADE)
-    product = models.ForeignKey(Product, on_delete=models.CASCADE, db_index=True, related_name="product_images")

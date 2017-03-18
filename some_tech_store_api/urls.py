@@ -18,7 +18,6 @@ from django.conf.urls.static import static
 from django.contrib import admin
 
 from some_tech_store_api import settings
-from supplier import views
 
 urlpatterns = [
     url(r'^admin/', admin.site.urls),

@@ -1,23 +1,20 @@
 import csv
 import logging
 import os
+import re
 import urllib
 import zipfile
 from concurrent import futures
-from io import StringIO
-
-import re
-import requests
-from io import BytesIO
-
 from decimal import Decimal
+from io import BytesIO, StringIO
 
+import requests
 from django.db import transaction
 from lxml import html
-from requests import HTTPError
 from requests import RequestException
 from requests.adapters import HTTPAdapter
-from supplier.models import Product, Vendor, Category, ProductImage, ProductImageMap, VendorProductLine
+
+from supplier.models import Product, Vendor, Category, ProductImage, VendorProductLine
 
 logger = logging.getLogger(__name__)
 
@@ -120,41 +117,11 @@ class Turn14DataStorage:
         self._store_remote_images(product_record)
 
     def _store_remote_images(self, product_record):
-        ProductImageMap.objects.filter(product=product_record).delete()
+        ProductImage.objects.filter(product=product_record).delete()
         for image_stack in self.data_item['images']:
             img_url = image_stack['large_img'] if image_stack['large_img'] else image_stack['med_img']
             if img_url:
-                product_image = ProductImage.objects.get_or_create(remote_image_file=img_url)[0]
-                ProductImageMap.objects.create(product=product_record, image=product_image)
-
-    def _download_and_store_images(self, product_record):
-        ProductImageMap.objects.filter(product=product_record).delete()
-        max_image_retries = 3
-        with open_session() as image_session:
-            for image_stack in self.data_item['images']:
-                img_url = image_stack['large_img'] if image_stack['large_img'] else image_stack['med_img']
-                if img_url:
-                    image_retries = 0
-                    url_tokens = re.split('/|\\\\', img_url)
-                    image_file_name = url_tokens[-1:][0]
-                    product_images = ProductImage.objects.filter(image_file__contains=image_file_name)
-                    if not product_images:
-                        last_http_error = None
-                        while image_retries < max_image_retries:
-                            image_retries += 1
-                            try:
-                                image_response = do_request(image_session, "get", img_url)
-                                image_retries = max_image_retries
-                            except HTTPError as last_http_error:
-                                logger.error("Failed to download image from {0}, retrying".format(img_url), exc_info=1)
-                        if image_response.status_code != 200:
-                            raise last_http_error
-                        with BytesIO(image_response.content) as file_stream:
-                            product_image = ProductImage()
-                            product_image.image_file.save(image_file_name, file_stream, True)
-                    else:
-                        product_image = product_images[0]
-                    ProductImageMap.objects.get_or_create(product=product_record, image=product_image)
+                ProductImage.objects.get_or_create(product=product_record, remote_image_file=img_url)[0]
 
     @staticmethod
     def product_exists(internal_part_num):
@@ -247,6 +214,7 @@ class Turn14DataImporter:
                 logger.error("Retrying parse and store due to error", exc_info=1)
                 self.import_and_store_product_data(refresh_all=refresh_all, num_retries=num_retries + 1)
             else:
+                logger.error("The maximum retry count has been reached")
                 raise
 
     def import_and_store_make_models(self):

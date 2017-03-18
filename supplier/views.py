@@ -1,12 +1,13 @@
-import django_filters
 import logging
+
+import django_filters
 from django.http import HttpResponse
-from rest_framework import generics
+from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import viewsets
-from rest_framework.pagination import PageNumberPagination
 from rest_framework.filters import OrderingFilter
-from django_filters.rest_framework import DjangoFilterBackend, FilterSet
-from supplier.models import Product, Category, ProductImageMap, Vendor
+from rest_framework.pagination import PageNumberPagination
+
+from supplier.models import Product, Category, Vendor
 from supplier.serializers import ProductSerializer, CategorySerializer, VendorSerializer
 from supplier.utils.turn14_data_importer import Turn14DataImporter
 
@@ -24,9 +25,9 @@ class ProductListFilter(django_filters.rest_framework.FilterSet):
     description = django_filters.CharFilter(name="description", method="description_filter")
     has_images = django_filters.BooleanFilter(method="has_images_filter")
 
-    def has_images_filter(self,queryset, name, value):
+    def has_images_filter(self, queryset, name, value):
         return queryset.filter(**{
-            "product_images__isnull": not value,
+            "images__isnull": not value,
         }).distinct()
 
     def get_numeric_filter_list(self, raw_filter_list):
@@ -76,6 +77,7 @@ class DefaultPagination(PageNumberPagination):
     page_size = 20
     page_size_query_param = "page_size"
 
+
 class ProductViewSet(viewsets.ReadOnlyModelViewSet):
     # permission_classes = (permissions.IsAuthenticated,)
     queryset = Product.objects.all()
@@ -85,8 +87,9 @@ class ProductViewSet(viewsets.ReadOnlyModelViewSet):
     filter_class = ProductListFilter
     ordering_fields = ('vendor_part_num', 'description', 'retail_price', 'jobber_price', 'min_price', 'core_charge', 'can_drop_ship', 'drop_ship_fee', 'vendor', 'category', 'sub_category',)
 
-    #TODO: figure out how to order on the custom category/sub_category fields
-    #possible solution http://stackoverflow.com/questions/24987446/django-rest-framework-queryset-doesnt-order
+    # TODO: figure out how to order on the custom category/sub_category fields
+    # possible solution http://stackoverflow.com/questions/24987446/django-rest-framework-queryset-doesnt-order
+
 
 class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
     # permission_classes = (permissions.IsAuthenticated,)

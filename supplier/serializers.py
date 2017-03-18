@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from supplier.models import Product, Vendor, Category, ProductImage, ProductImageMap, VendorProductLine
+from supplier.models import Product, Vendor, Category, ProductImage, VendorProductLine
 
 
 class VendorSerializer(serializers.ModelSerializer):
@@ -49,7 +49,7 @@ class ProductSerializer(serializers.ModelSerializer):
     sub_category = serializers.SerializerMethodField()
     category = serializers.SerializerMethodField()
     can_drop_ship = serializers.SerializerMethodField()
-    images = serializers.SerializerMethodField()
+    images = ProductImageSerializer(read_only=True, many=True)
 
     def get_sub_category(self, product):
         sub_category = None
@@ -66,13 +66,14 @@ class ProductSerializer(serializers.ModelSerializer):
     def get_can_drop_ship(self, product):
         return product.get_can_drop_ship_display()
 
-    def get_images(self, product):
-        product_map_items = ProductImageMap.objects.select_related("image").filter(product=product)
-        images = [product_item.image for product_item in product_map_items]
-
-        return ProductImageSerializer(images, many=True, context=self.context).data
+    # def get_images(self, product):
+    #     product_map_items = ProductImageMap.objects.select_related("image").filter(product=product)
+    #     images = [product_item.image for product_item in product_map_items]
+    #
+    #     return ProductImageSerializer(images, many=True, context=self.context).data
 
     class Meta:
         model = Product
         fields = (
-        'internal_part_num', 'vendor_part_num', 'description', 'overview', 'cost', 'retail_price', 'jobber_price', 'min_price', 'core_charge', 'can_drop_ship', 'drop_ship_fee', 'vendor', 'vendor_product_line', 'category', 'sub_category', 'images',)
+            'internal_part_num', 'vendor_part_num', 'description', 'overview', 'cost', 'retail_price', 'jobber_price', 'min_price', 'core_charge', 'can_drop_ship', 'drop_ship_fee', 'vendor', 'vendor_product_line', 'category', 'sub_category',
+            'images',)
