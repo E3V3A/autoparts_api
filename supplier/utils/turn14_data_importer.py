@@ -91,6 +91,10 @@ class Turn14DataStorage:
             'cost': {
                 'model': 'cost',
                 'serializer': lambda val: self.string_to_decimal(val)
+            },
+            'primary_img_thumb': {
+                'model': 'remote_image_thumb',
+                'serializer': None
             }
         }
 

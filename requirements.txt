@@ -7,3 +7,4 @@ Markdown==2.6.8
 olefile==0.44
 pillow==4.0.0
 requests==2.13.0
+django-cors-headers==2.0.2

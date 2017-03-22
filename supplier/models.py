@@ -54,6 +54,7 @@ class Product(Base):
     vendor = models.ForeignKey(Vendor, on_delete=models.CASCADE, db_index=True)
     vendor_product_line = models.ForeignKey(VendorProductLine, on_delete=models.CASCADE, db_index=True, null=True)
     category = models.ForeignKey(Category, on_delete=models.CASCADE, null=True, db_index=True)
+    remote_image_thumb = models.CharField(max_length=150, null=True)
 
     @staticmethod
     def get_drop_ship_val(drop_ship_text):
