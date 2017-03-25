@@ -14,7 +14,7 @@ from lxml import html
 from requests import RequestException
 from requests.adapters import HTTPAdapter
 
-from supplier.models import Product, Vendor, Category, ProductImage, VendorProductLine
+from supplier.models import Product, Vendor, Category, ProductImage, VendorProductLine, ProductCategory
 
 logger = logging.getLogger(__name__)
 
@@ -112,12 +112,14 @@ class Turn14DataStorage:
             if key in self.product_data_mapping:
                 data_mapper = self.product_data_mapping[key]
                 product_args[data_mapper['model']] = data_mapper['serializer'](value) if data_mapper['serializer'] is not None else value
-
+        category_records = []
         if self.data_item['category']:
-            product_args['category'] = Category.objects.get_or_create(name=self.data_item['category'], parent_category=None)[0]
+            category_records.append(Category.objects.get_or_create(name=self.data_item['category'], parent_category=None)[0])
             if self.data_item['sub_category']:
-                product_args['category'] = Category.objects.get_or_create(name=self.data_item['sub_category'], parent_category=product_args['category'])[0]
+                category_records.append(Category.objects.get_or_create(name=self.data_item['sub_category'], parent_category=category_records[0])[0])
         product_record = Product.objects.update_or_create(internal_part_num=product_args['internal_part_num'], defaults=product_args)[0]
+        for category_record in category_records:
+            ProductCategory.objects.get_or_create(product=product_record, category=category_record)
         self._store_remote_images(product_record)
 
     def _store_remote_images(self, product_record):

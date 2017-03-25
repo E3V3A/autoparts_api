@@ -29,10 +29,11 @@ class ProductListFilter(django_filters.rest_framework.FilterSet):
     description = django_filters.CharFilter(method="description_filter")
     has_images = django_filters.BooleanFilter(method="has_images_filter")
 
+    #If no image thumb, assume no images at all for faster filtering
     def has_images_filter(self, queryset, name, value):
         return queryset.filter(**{
-            "images__isnull": not value,
-        }).distinct()
+            "remote_image_thumb__isnull": not value,
+        })
 
     def can_drop_ship_filter(self, queryset, name, value):
         filter_list = list()
@@ -56,10 +57,7 @@ class ProductListFilter(django_filters.rest_framework.FilterSet):
     def category_filter(self, queryset, name, value):
         filter_list = get_numeric_filter_list(value)
         return queryset.filter(**{
-            "category__parent_category__id__in": filter_list
-        }) | queryset.filter(**{
-            "category__id__in": filter_list,
-            "category__parent_category__isnull": True
+            "productcategory__category__id__in": filter_list
         })
 
     class Meta:
@@ -89,7 +87,7 @@ class CategoryListFilters(SimpleIdListFilter):
     def top_level_only_filter(self, queryset, name, value):
         return queryset.filter(**{
             "parent_category__isnull": value,
-        }).distinct()
+        })
 
     class Meta:
         model = Category

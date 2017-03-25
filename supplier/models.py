@@ -53,7 +53,6 @@ class Product(Base):
     drop_ship_fee = models.DecimalField(max_digits=5, decimal_places=2, null=True, db_index=True)
     vendor = models.ForeignKey(Vendor, on_delete=models.CASCADE, db_index=True)
     vendor_product_line = models.ForeignKey(VendorProductLine, on_delete=models.CASCADE, db_index=True, null=True)
-    category = models.ForeignKey(Category, on_delete=models.CASCADE, null=True, db_index=True)
     remote_image_thumb = models.CharField(max_length=150, null=True)
 
     @staticmethod
@@ -62,6 +61,14 @@ class Product(Base):
             if dropship_choice[1].lower() == drop_ship_text.lower():
                 return dropship_choice[0]
         return None
+
+
+class ProductCategory(Base):
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, db_index=True)
+    category = models.ForeignKey(Category, on_delete=models.CASCADE, db_index=True)
+
+    class Meta:
+        unique_together = ('product', 'category',)
 
 
 """
