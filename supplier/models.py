@@ -17,7 +17,7 @@ class Vendor(Base):
 
 class VendorProductLine(Base):
     name = models.CharField(max_length=150, db_index=True)
-    vendor = models.ForeignKey(Vendor, on_delete=models.CASCADE, db_index=True)
+    vendor = models.ForeignKey(Vendor, on_delete=models.CASCADE)
 
     class Meta:
         unique_together = ("name", "vendor",)
@@ -25,7 +25,10 @@ class VendorProductLine(Base):
 
 class Category(Base):
     name = models.CharField(max_length=50, db_index=True)
-    parent_category = models.ForeignKey('self', on_delete=models.CASCADE, null=True, related_name='parent', db_index=True)
+    parent_category = models.ForeignKey('self', on_delete=models.CASCADE, null=True, related_name='parent')
+
+    class Meta:
+        unique_together = ("name", "parent_category",)
 
 
 class Product(Base):
@@ -51,8 +54,8 @@ class Product(Base):
     weight_in_lbs = models.DecimalField(max_digits=6, decimal_places=2, null=True, db_index=True)
     can_drop_ship = models.IntegerField(choices=DROPSHIP_CHOICES, default=NEVER_DROPSHIP, db_index=True)
     drop_ship_fee = models.DecimalField(max_digits=5, decimal_places=2, null=True, db_index=True)
-    vendor = models.ForeignKey(Vendor, on_delete=models.CASCADE, db_index=True)
-    vendor_product_line = models.ForeignKey(VendorProductLine, on_delete=models.CASCADE, db_index=True, null=True)
+    vendor = models.ForeignKey(Vendor, on_delete=models.CASCADE)
+    vendor_product_line = models.ForeignKey(VendorProductLine, on_delete=models.CASCADE, null=True)
     remote_image_thumb = models.CharField(max_length=150, null=True)
 
     @staticmethod
@@ -64,8 +67,8 @@ class Product(Base):
 
 
 class ProductCategory(Base):
-    product = models.ForeignKey(Product, on_delete=models.CASCADE, db_index=True)
-    category = models.ForeignKey(Category, on_delete=models.CASCADE, db_index=True)
+    product = models.ForeignKey(Product, on_delete=models.CASCADE)
+    category = models.ForeignKey(Category, on_delete=models.CASCADE)
 
     class Meta:
         unique_together = ('product', 'category',)
@@ -90,7 +93,7 @@ class ImageStorage(FileSystemStorage):
 class ProductImage(Base):
     # image_file = models.ImageField(upload_to="products/", max_length=150, storage=ImageStorage(), db_index=True)
     remote_image_file = models.CharField(max_length=150, db_index=True)
-    product = models.ForeignKey(Product, on_delete=models.CASCADE, db_index=True, related_name="images")
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="images")
     """
     below for handling duplicates
 
@@ -98,3 +101,41 @@ class ProductImage(Base):
         ProductImage.objects.filter(image_file=self.image_file).delete()
         super(ProductImage, self).save(*args, **kwargs)
     """
+
+
+class VehicleYear(Base):
+    year = models.PositiveIntegerField(db_index=True, unique=True)
+
+
+class VehicleMake(Base):
+    name = models.CharField(max_length=50, db_index=True, unique=True)
+
+
+class VehicleModel(Base):
+    name = models.CharField(max_length=50, db_index=True)
+    make = models.ForeignKey(VehicleMake, on_delete=models.CASCADE)
+
+    class Meta:
+        unique_together = ("name", "make",)
+
+
+class VehicleEngine(Base):
+    name = models.CharField(max_length=50, db_index=True, unique=True)
+
+class VehicleSubModel(Base):
+    name = models.CharField(max_length=50, db_index=True)
+    model = models.ForeignKey(VehicleModel, on_delete=models.CASCADE)
+
+    class Meta:
+        unique_together = ("name", "model",)
+
+
+class Vehicle(Base):
+    year = models.ForeignKey(VehicleYear, on_delete=models.CASCADE)
+    make = models.ForeignKey(VehicleMake, on_delete=models.CASCADE)
+    model = models.ForeignKey(VehicleModel, on_delete=models.CASCADE)
+    sub_model = models.ForeignKey(VehicleSubModel, on_delete=models.CASCADE)
+    engine = models.ForeignKey(VehicleEngine, on_delete=models.CASCADE)
+
+    class Meta:
+        unique_together = ("year", "make", "model", "sub_model", "engine",)
