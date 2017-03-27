@@ -29,7 +29,7 @@ class ProductListFilter(django_filters.rest_framework.FilterSet):
     description = django_filters.CharFilter(method="description_filter")
     has_images = django_filters.BooleanFilter(method="has_images_filter")
 
-    #If no image thumb, assume no images at all for faster filtering
+    # If no image thumb, assume no images at all for faster filtering
     def has_images_filter(self, queryset, name, value):
         return queryset.filter(**{
             "remote_image_thumb__isnull": not value,
@@ -58,7 +58,7 @@ class ProductListFilter(django_filters.rest_framework.FilterSet):
         filter_list = get_numeric_filter_list(value)
         return queryset.filter(**{
             "productcategory__category__id__in": filter_list
-        })
+        }).distinct()
 
     class Meta:
         model = Product
@@ -76,6 +76,14 @@ class SimpleIdListFilter(django_filters.rest_framework.FilterSet):
 
 
 class VendorListFilters(SimpleIdListFilter):
+    category_id = django_filters.BaseInFilter(method="category_filter")
+
+    def category_filter(self, queryset, name, value):
+        filter_list = get_numeric_filter_list(value)
+        return queryset.filter(**{
+            "product__productcategory__category__pk__in": filter_list
+        }).distinct()
+
     class Meta:
         model = Vendor
         fields = ('id',)
@@ -83,6 +91,13 @@ class VendorListFilters(SimpleIdListFilter):
 
 class CategoryListFilters(SimpleIdListFilter):
     top_level_only = django_filters.BooleanFilter(method="top_level_only_filter")
+    vendor_id = django_filters.BaseInFilter(method="vendor_filter")
+
+    def vendor_filter(self, queryset, name, value):
+        filter_list = get_numeric_filter_list(value)
+        return queryset.filter(**{
+            "productcategory__product__vendor__pk__in": filter_list
+        }).distinct()
 
     def top_level_only_filter(self, queryset, name, value):
         return queryset.filter(**{
