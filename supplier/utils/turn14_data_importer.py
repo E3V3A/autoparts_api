@@ -14,7 +14,7 @@ from lxml import html
 from requests import RequestException
 from requests.adapters import HTTPAdapter
 
-from supplier.models import Product, Vendor, Category, ProductImage, VendorProductLine, ProductCategory, VehicleYear, VehicleMake, VehicleModel, VehicleSubModel, VehicleEngine
+from supplier.models import Product, Vendor, Category, ProductImage, VendorProductLine, ProductCategory, VehicleYear, VehicleMake, VehicleModel, VehicleSubModel, VehicleEngine, Vehicle, ProductFitment
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +131,7 @@ class Turn14DataStorage:
 
     def _store_product_fitment(self, product_record, fitment):
         for fitment_item in fitment:
-            vehicle_records = self.store_or_get_vehicle(**fitment_item)
+            ProductFitment.objects.get_or_create(product=product_record, vehicle=self.store_or_get_vehicle(**fitment_item))
 
     def store_or_get_vehicle(self, year, make, model, sub_model, engine, special_fitment):
         year_record = VehicleYear.objects.get_or_create(year=year)[0]
@@ -139,14 +139,7 @@ class Turn14DataStorage:
         model_record = VehicleModel.objects.get_or_create(name=model, make=make_record)[0]
         sub_model_record = VehicleSubModel.objects.get_or_create(name=sub_model, model=model_record)[0]
         engine_record = VehicleEngine.objects.get_or_create(name=engine)[0]
-        return {
-            'year_record': year_record,
-            'make_record': make_record,
-            'model_record': model_record,
-            'sub_model_record': sub_model_record,
-            'engine_record': engine_record
-        }
-
+        return Vehicle.objects.get_or_create(year=year_record, make=make_record, model=model_record, sub_model=sub_model_record, engine=engine_record)[0]
 
     @staticmethod
     def product_exists(internal_part_num):

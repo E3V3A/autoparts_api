@@ -122,6 +122,7 @@ class VehicleModel(Base):
 class VehicleEngine(Base):
     name = models.CharField(max_length=50, db_index=True, unique=True)
 
+
 class VehicleSubModel(Base):
     name = models.CharField(max_length=50, db_index=True)
     model = models.ForeignKey(VehicleModel, on_delete=models.CASCADE)
@@ -139,3 +140,11 @@ class Vehicle(Base):
 
     class Meta:
         unique_together = ("year", "make", "model", "sub_model", "engine",)
+
+
+class ProductFitment(Base):
+    product = models.ForeignKey(Product, on_delete=models.CASCADE)
+    vehicle = models.ForeignKey(Vehicle, on_delete=models.CASCADE)
+
+    class Meta:
+        unique_together = ("product", "vehicle",)

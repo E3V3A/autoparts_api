@@ -40,7 +40,7 @@ class ProductListFilter(django_filters.rest_framework.FilterSet):
         for val in value:
             filter_list.append(Product.get_drop_ship_val(val))
         return queryset.filter(**{
-            "can_drop_ship__in": filter_list,
+            "can_drop_ship__in": filter_list
         })
 
     def description_filter(self, queryset, name, value):
