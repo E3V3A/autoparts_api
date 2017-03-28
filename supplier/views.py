@@ -1,4 +1,5 @@
 import logging
+
 from django.http import HttpResponse
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import viewsets
@@ -13,15 +14,19 @@ logger = logging.getLogger(__name__)
 
 
 class ProductViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = Product.objects.select_related('vendor').select_related('vendor_product_line').prefetch_related('productcategory_set__category').prefetch_related("images").all()
     serializer_class = ProductSerializer
     pagination_class = DefaultPagination
     filter_backends = (DjangoFilterBackend, OrderingFilter)
     filter_class = ProductListFilter
     ordering_fields = ('vendor_part_num', 'description', 'retail_price', 'jobber_price', 'min_price', 'core_charge', 'can_drop_ship', 'drop_ship_fee', 'vendor', 'category', 'sub_category',)
 
-    # TODO: figure out how to order on the custom category/sub_category fields
-    # possible solution http://stackoverflow.com/questions/24987446/django-rest-framework-queryset-doesnt-order
+    def get_queryset(self):
+        return Product.objects.select_related('vendor').select_related('vendor_product_line').prefetch_related('productcategory_set__category').prefetch_related("images").prefetch_related("productfitment_set").all()
+
+
+        # TODO: figure out how to order on the custom category/sub_category fields
+        # possible solution http://stackoverflow.com/questions/24987446/django-rest-framework-queryset-doesnt-order
+
 
 class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
     # permission_classes = (permissions.IsAuthenticated,)
@@ -41,6 +46,7 @@ class VendorViewSet(viewsets.ReadOnlyModelViewSet):
     filter_backends = (DjangoFilterBackend, OrderingFilter)
     filter_class = VendorListFilters
     ordering_fields = ('name',)
+
 
 def import_products(request):
     Turn14DataImporter().import_and_store_product_data(refresh_all=True)

@@ -1,6 +1,6 @@
-import django_filters
 import logging
 
+import django_filters
 from rest_framework.pagination import PageNumberPagination
 
 from supplier.models import Product, Vendor, Category

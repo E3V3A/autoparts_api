@@ -138,13 +138,11 @@ class Vehicle(Base):
     sub_model = models.ForeignKey(VehicleSubModel, on_delete=models.CASCADE)
     engine = models.ForeignKey(VehicleEngine, on_delete=models.CASCADE)
 
-    class Meta:
-        unique_together = ("year", "make", "model", "sub_model", "engine",)
-
 
 class ProductFitment(Base):
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     vehicle = models.ForeignKey(Vehicle, on_delete=models.CASCADE)
+    special_fitment = models.CharField(max_length=300, null=True)
 
     class Meta:
         unique_together = ("product", "vehicle",)

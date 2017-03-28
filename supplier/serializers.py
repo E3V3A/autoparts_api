@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from supplier.models import Product, Vendor, Category, ProductImage, VendorProductLine
+from supplier.models import Product, Vendor, Category, ProductImage, VendorProductLine, ProductFitment
 
 
 class VendorSerializer(serializers.ModelSerializer):
@@ -43,6 +43,12 @@ class ProductImageSerializer(serializers.ModelSerializer):
         fields = ('url',)
 
 
+class ProductFitmentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ProductFitment
+        fields = ('id',)
+
+
 class ProductSerializer(serializers.ModelSerializer):
     vendor = VendorSerializer(read_only=True)
     vendor_product_line = VendorProductLineSerializer(read_only=True)
@@ -50,6 +56,7 @@ class ProductSerializer(serializers.ModelSerializer):
     category = serializers.SerializerMethodField()
     can_drop_ship = serializers.SerializerMethodField()
     images = ProductImageSerializer(read_only=True, many=True)
+    fitment = ProductFitmentSerializer(read_only=True, many=True, source="productfitment_set")
 
     def get_sub_category(self, product):
         return ProductCategorySerializer(instance=product.productcategory_set.filter(category__parent_category__isnull=False).first().category).data
@@ -64,4 +71,4 @@ class ProductSerializer(serializers.ModelSerializer):
         model = Product
         fields = (
             'id', 'internal_part_num', 'vendor_part_num', 'description', 'overview', 'cost', 'retail_price', 'jobber_price', 'min_price', 'core_charge', 'can_drop_ship', 'drop_ship_fee', 'vendor', 'vendor_product_line', 'category', 'sub_category',
-            'images', 'remote_image_thumb',)
+            'images', 'remote_image_thumb', 'fitment',)

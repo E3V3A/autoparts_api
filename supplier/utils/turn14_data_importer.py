@@ -131,9 +131,10 @@ class Turn14DataStorage:
 
     def _store_product_fitment(self, product_record, fitment):
         for fitment_item in fitment:
-            ProductFitment.objects.get_or_create(product=product_record, vehicle=self.store_or_get_vehicle(**fitment_item))
+            special_fitment = fitment_item.pop('special_fitment')
+            ProductFitment.objects.get_or_create(product=product_record, vehicle=self.store_or_get_vehicle(**fitment_item), special_fitment=special_fitment)
 
-    def store_or_get_vehicle(self, year, make, model, sub_model, engine, special_fitment):
+    def store_or_get_vehicle(self, year, make, model, sub_model, engine, **kwargs):
         year_record = VehicleYear.objects.get_or_create(year=year)[0]
         make_record = VehicleMake.objects.get_or_create(name=make)[0]
         model_record = VehicleModel.objects.get_or_create(name=model, make=make_record)[0]
@@ -429,6 +430,6 @@ class Turn14DataImporter:
                             'model': model,
                             'sub_model': sub_model,
                             'engine': engine,
-                            'special_fitment': special_fitment[str(year)] if str(year) in special_fitment else ''
+                            'special_fitment': special_fitment[str(year)] if str(year) in special_fitment else None
                         })
         return fitment_data
