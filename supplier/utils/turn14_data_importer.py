@@ -5,172 +5,16 @@ import re
 import urllib
 import zipfile
 from concurrent import futures
-from decimal import Decimal
 from io import BytesIO, StringIO
 
 import requests
-from django.db import transaction
 from lxml import html
 from requests import RequestException
 from requests.adapters import HTTPAdapter
 
-from supplier.models import Product, Vendor, Category, ProductImage, VendorProductLine, ProductCategory, VehicleYear, VehicleMake, VehicleModel, VehicleSubModel, VehicleEngine, Vehicle, ProductFitment
+from .turn14_data_storage import Turn14DataStorage
 
 logger = logging.getLogger(__name__)
-
-
-def open_session(max_workers=15, max_retries=10):
-    session = requests.Session()
-    adapter_kwargs = dict(pool_connections=max_workers,
-                          pool_maxsize=max_workers,
-                          max_retries=max_retries)
-    session.mount('https://', HTTPAdapter(**adapter_kwargs))
-    session.mount('http://', HTTPAdapter(**adapter_kwargs))
-    return session
-
-
-def do_request(request_obj, http_fn, url, **kwargs):
-    logger.info("Sending {0} request to {1}".format(http_fn, url))
-    if "timeout" not in kwargs:
-        kwargs["timeout"] = 60
-    response_or_future = getattr(request_obj, http_fn)(url, **kwargs)
-    if hasattr(response_or_future, "raise_for_status"):
-        response_or_future.raise_for_status()
-    logger.info("{0} request to {1} completed".format(http_fn, url))
-    return response_or_future
-
-
-class Turn14DataStorage:
-    def __init__(self):
-        self.product_data_mapping = {
-            'Retail': {
-                'model': 'retail_price',
-                'serializer': lambda val: self.string_to_decimal(val)
-            },
-            'Map': {
-                'model': 'min_price',
-                'serializer': lambda val: self.string_to_decimal(val)
-            },
-            'Jobber': {
-                'model': 'jobber_price',
-                'serializer': lambda val: self.string_to_decimal(val)
-            },
-            'CoreCharge': {
-                'model': 'core_charge',
-                'serializer': lambda val: self.string_to_decimal(val)
-            },
-            'DropShip': {
-                'model': 'can_drop_ship',
-                'serializer': lambda val: self._can_drop_ship(val)
-            },
-            'DSFee': {
-                'model': 'drop_ship_fee',
-                'serializer': lambda val: self._get_drop_ship_fee(val)
-            },
-            'Description': {
-                'model': 'description',
-                'serializer': None
-            },
-            'Weight': {
-                'model': 'weight_in_lbs',
-                'serializer': lambda val: self.string_to_decimal(val)
-            },
-            'PartNumber': {
-                'model': 'vendor_part_num',
-                'serializer': None
-            },
-            'InternalPartNumber': {
-                'model': 'internal_part_num',
-                'serializer': None
-            },
-            'overview': {
-                'model': 'overview',
-                'serializer': None
-            },
-            'cost': {
-                'model': 'cost',
-                'serializer': lambda val: self.string_to_decimal(val)
-            },
-            'primary_img_thumb': {
-                'model': 'remote_image_thumb',
-                'serializer': None
-            }
-        }
-
-    @transaction.atomic
-    def save(self, data_item):
-        vendor = Vendor.objects.get_or_create(name=data_item["PrimaryVendor"])[0]
-        product_args = {
-            'vendor': vendor
-        }
-        product_line = None
-        if data_item['product_line']:
-            product_line = VendorProductLine.objects.get_or_create(vendor=vendor, name=data_item['product_line'])[0]
-        product_args['vendor_product_line'] = product_line
-        for key, value in data_item.items():
-            if key in self.product_data_mapping:
-                data_mapper = self.product_data_mapping[key]
-                product_args[data_mapper['model']] = data_mapper['serializer'](value) if data_mapper['serializer'] is not None else value
-        category_records = []
-        if data_item['category']:
-            category_records.append(Category.objects.get_or_create(name=data_item['category'], parent_category=None)[0])
-            if data_item['sub_category']:
-                category_records.append(Category.objects.get_or_create(name=data_item['sub_category'], parent_category=category_records[0])[0])
-        product_record = Product.objects.update_or_create(internal_part_num=product_args['internal_part_num'], defaults=product_args)[0]
-        for category_record in category_records:
-            ProductCategory.objects.get_or_create(product=product_record, category=category_record)
-        self._store_remote_images(product_record, data_item['images'])
-        self._store_product_fitment(product_record, data_item['fitment'])
-
-    def _store_remote_images(self, product_record, images):
-        ProductImage.objects.filter(product=product_record).delete()
-        for image_stack in images:
-            img_url = image_stack['large_img'] if image_stack['large_img'] else image_stack['med_img']
-            if img_url:
-                ProductImage.objects.get_or_create(product=product_record, remote_image_file=img_url)[0]
-
-    def _store_product_fitment(self, product_record, fitment):
-        for fitment_item in fitment:
-            special_fitment = fitment_item.pop('special_fitment')
-            ProductFitment.objects.get_or_create(product=product_record, vehicle=self.store_or_get_vehicle(**fitment_item), special_fitment=special_fitment)
-
-    def store_or_get_vehicle(self, year, make, model, sub_model, engine, **kwargs):
-        year_record = VehicleYear.objects.get_or_create(year=year)[0]
-        make_record = VehicleMake.objects.get_or_create(name=make)[0]
-        model_record = VehicleModel.objects.get_or_create(name=model, make=make_record)[0]
-        sub_model_record = VehicleSubModel.objects.get_or_create(name=sub_model, model=model_record)[0]
-        engine_record = VehicleEngine.objects.get_or_create(name=engine)[0]
-        return Vehicle.objects.get_or_create(year=year_record, make=make_record, model=model_record, sub_model=sub_model_record, engine=engine_record)[0]
-
-    @staticmethod
-    def product_exists(internal_part_num):
-        if len(Product.objects.filter(internal_part_num=internal_part_num)):
-            return True
-        return False
-
-    @staticmethod
-    def string_to_decimal(value):
-        if value:
-            return Decimal(value.replace(",", ""))
-        return None
-
-    @staticmethod
-    def _can_drop_ship(value):
-        mapping = {
-            'possible': Product.POSSIBLE_DROPSHIP,
-            'never': Product.NEVER_DROPSHIP,
-            'always': Product.ALWAYS_DROPSHIP,
-        }
-        return mapping[value] if value else None
-
-    @staticmethod
-    def _get_drop_ship_fee(value):
-        fee_regex = re.compile("\d+\.\d+")
-        fee = fee_regex.search(value)
-        if fee:
-            return Decimal(fee.group(0))
-        return None
-
 
 class Turn14DataImporter:
     PRODUCT_URL = "https://www.turn14.com/export.php"
@@ -193,6 +37,27 @@ class Turn14DataImporter:
         self.max_retries = max_retries
         self.max_failed_items = max_failed_items
 
+    @staticmethod
+    def open_session(max_workers=15, max_retries=10):
+        session = requests.Session()
+        adapter_kwargs = dict(pool_connections=max_workers,
+                              pool_maxsize=max_workers,
+                              max_retries=max_retries)
+        session.mount('https://', HTTPAdapter(**adapter_kwargs))
+        session.mount('http://', HTTPAdapter(**adapter_kwargs))
+        return session
+
+    @staticmethod
+    def do_request(request_obj, http_fn, url, **kwargs):
+        logger.info("Sending {0} request to {1}".format(http_fn, url))
+        if "timeout" not in kwargs:
+            kwargs["timeout"] = 60
+        response_or_future = getattr(request_obj, http_fn)(url, **kwargs)
+        if hasattr(response_or_future, "raise_for_status"):
+            response_or_future.raise_for_status()
+        logger.info("{0} request to {1} completed".format(http_fn, url))
+        return response_or_future
+
     def import_and_store_product_data(self, **kwargs):
         csv_results = dict()
         future_results = dict()
@@ -212,7 +77,7 @@ class Turn14DataImporter:
 
         try:
             with self._open_session() as session:
-                product_response = do_request(session, "post", self.PRODUCT_URL, timeout=120, data={"stockExport": "items"})
+                product_response = self.do_request(session, "post", self.PRODUCT_URL, timeout=120, data={"stockExport": "items"})
                 if product_response.headers["content-type"] != "application/zip":
                     raise RequestException("The data returned was not in zip format")
                 with BytesIO(product_response.content) as file_stream:
@@ -241,20 +106,20 @@ class Turn14DataImporter:
 
     def _login(self, session):
         logger.info("Sending request to login to turn14")
-        login_response = do_request(session, "post", "https://www.turn14.com/user/login", data=self.login_data)
+        login_response = self.do_request(session, "post", "https://www.turn14.com/user/login", data=self.login_data)
         if not 'X-Php-Sess-User' in login_response.headers:
             raise RequestException("Session was not returned from login request")
         return login_response
 
     def _open_session(self):
-        session = open_session(self.max_workers)
+        session = self.open_session(self.max_workers)
         self._login(session)
         return session
 
     def _get_part_data(self, part_num, session):
         part_search_url = "{0}?vmmPart={1}".format(self.SEARCH_URL, part_num)
         logger.info("Getting part data for part_num {0} @ {1}".format(part_num, part_search_url))
-        part_search_response = do_request(session, "get", part_search_url)
+        part_search_response = self.do_request(session, "get", part_search_url)
         part_search_html = html.fromstring(part_search_response.content.decode("utf-8", errors="ignore"))
         part_search_data = self._parse_item_data_from_search(part_search_html)
         part_data = dict()
@@ -321,7 +186,7 @@ class Turn14DataImporter:
         part_detail_data = dict()
         part_url = "{0}&itemCode={1}".format(self.PART_URL, item_code)
         logger.info("Getting part details for item_code {0} @ {1}".format(item_code, part_url))
-        part_detail_response = do_request(session, "get", part_url)
+        part_detail_response = self.do_request(session, "get", part_url)
         part_detail_html = html.fromstring(part_detail_response.content.decode("utf-8", errors="ignore"))
         overview_search = part_detail_html.cssselect("p.prod-overview")
         overview = ""

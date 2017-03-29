@@ -48,10 +48,10 @@ class FieldLimiterMixin(object):
 
     def get_queryset(self):
         def apply_related_fns(related_map, fn_to_apply, query_set, fields):
-            for related_obj, related_fields in related_map.items():
-                fields_mapped = [field for field in related_fields if field in fields]
+            for related_tuple in related_map:
+                fields_mapped = [field for field in related_tuple[1] if field in fields]
                 if fields_mapped:
-                    query_set = getattr(query_set, fn_to_apply)(related_obj)
+                    query_set = getattr(query_set, fn_to_apply)(*related_tuple[0])
             return query_set
 
         serializer_class = self.get_serializer_class()
@@ -71,17 +71,16 @@ class ProductViewSet(FieldLimiterMixin, viewsets.ReadOnlyModelViewSet):
     filter_backends = (DjangoFilterBackend, OrderingFilter)
     filter_class = ProductListFilter
     ordering_fields = ('vendor_part_num', 'description', 'retail_price', 'jobber_price', 'min_price', 'core_charge', 'can_drop_ship', 'drop_ship_fee', 'vendor', 'category', 'sub_category',)
-    select_related_map = {
-        "vendor": ("vendor",),
-        "vendor_product_line": ("vendor_product_line",)
-    }
-
-    prefetch_related_map = {
-        "productcategory_set__category": ("category", "sub_category",),
-        "images": ("images",),
-        "productfitment_set": ("fitment",)
-    }
-
+    select_related_map = (
+        (("vendor",), ("vendor",)),
+        (("vendor_product_line",), ("vendor_product_line",))
+    )
+    fit_obj = "productfitment_set__vehicle__"
+    prefetch_related_map = (
+        (("productcategory_set__category",), ("category", "sub_category",)),
+        (("images",), ("images",)),
+        ((fit_obj + "year", fit_obj + "make", fit_obj + "model", fit_obj + "sub_model", fit_obj + "engine",), ("fitment",))
+    )
 
 class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
     # permission_classes = (permissions.IsAuthenticated,)

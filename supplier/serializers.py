@@ -44,9 +44,34 @@ class ProductImageSerializer(serializers.ModelSerializer):
 
 
 class ProductFitmentSerializer(serializers.ModelSerializer):
+    year = serializers.SerializerMethodField()
+    make = serializers.SerializerMethodField()
+    model = serializers.SerializerMethodField()
+    sub_model = serializers.SerializerMethodField()
+    engine = serializers.SerializerMethodField()
+    special_fitment = serializers.SerializerMethodField()
+
+    def get_year(self, product_fitment):
+        return product_fitment.vehicle.year.year
+
+    def get_make(self, product_fitment):
+        return product_fitment.vehicle.make.name
+
+    def get_model(self, product_fitment):
+        return product_fitment.vehicle.model.name
+
+    def get_sub_model(self, product_fitment):
+        return product_fitment.vehicle.sub_model.name
+
+    def get_engine(self, product_fitment):
+        return product_fitment.vehicle.engine.name
+
+    def get_special_fitment(self, product_fitment):
+        return product_fitment.special_fitment
+
     class Meta:
         model = ProductFitment
-        fields = ('id',)
+        fields = ('year', 'make', 'model', 'sub_model', 'engine', 'special_fitment',)
 
 
 class ProductSerializer(serializers.ModelSerializer):
