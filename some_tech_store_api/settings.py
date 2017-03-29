@@ -10,6 +10,8 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/1.10/ref/settings/
 """
 
+
+#TODO split this file up into prod/dev settings
 import os
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
@@ -36,6 +38,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'debug_toolbar',
     'corsheaders',
     'rest_framework',
     'supplier'
@@ -50,7 +53,10 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'debug_toolbar.middleware.DebugToolbarMiddleware'
 ]
+
+INTERNAL_IPS = ['127.0.0.1', 'localhost']
 
 ROOT_URLCONF = 'some_tech_store_api.urls'
 

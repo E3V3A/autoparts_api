@@ -58,11 +58,18 @@ class ProductSerializer(serializers.ModelSerializer):
     images = ProductImageSerializer(read_only=True, many=True)
     fitment = ProductFitmentSerializer(read_only=True, many=True, source="productfitment_set")
 
+    def _get_category(self, product, is_sub_category=False):
+        category = None
+        for product_category in product.productcategory_set.all():
+            if (not is_sub_category and product_category.category.parent_category is None) or (is_sub_category and product_category.category.parent_category is not None):
+                category = product_category.category
+        return category
+
     def get_sub_category(self, product):
-        return ProductCategorySerializer(instance=product.productcategory_set.filter(category__parent_category__isnull=False).first().category).data
+        return ProductCategorySerializer(instance=self._get_category(product, True)).data
 
     def get_category(self, product):
-        return ProductCategorySerializer(instance=product.productcategory_set.filter(category__parent_category__isnull=True).first().category).data
+        return ProductCategorySerializer(instance=self._get_category(product)).data
 
     def get_can_drop_ship(self, product):
         return product.get_can_drop_ship_display()

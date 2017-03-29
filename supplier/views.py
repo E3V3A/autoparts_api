@@ -13,19 +13,74 @@ from supplier.utils.turn14_data_importer import Turn14DataImporter
 logger = logging.getLogger(__name__)
 
 
-class ProductViewSet(viewsets.ReadOnlyModelViewSet):
+class FieldLimiterMixin(object):
+    @staticmethod
+    def filter_fields(fields, request):
+        include_fields = request.query_params.get("fields")
+        exclude_fields = request.query_params.get("-fields")
+        if include_fields:
+            included_fields = include_fields.split(",")
+            filtered_fields = [field for field in included_fields if field in fields]
+
+        elif exclude_fields:
+            excluded_fields = exclude_fields.split(",")
+            filtered_fields = [field for field in fields if field not in excluded_fields]
+        else:
+            filtered_fields = fields
+
+        return filtered_fields
+
+    def get_serializer(self, *args, **kwargs):
+        serializer_class = self.get_serializer_class()
+
+        def serializer_init(self, *args, **kwargs):
+            super(serializer_class, self).__init__(*args, **kwargs)
+            included_fields = FieldLimiterMixin.filter_fields(self.fields, self.context['request'])
+            field_keys = list(self.fields.keys())
+            for field_key in field_keys:
+                if field_key not in included_fields:
+                    self.fields.pop(field_key)
+
+        kwargs['context'] = self.get_serializer_context()
+        serializer_class.__init__ = serializer_init
+        serializer_instance = serializer_class(*args, **kwargs)
+        return serializer_instance
+
+    def get_queryset(self):
+        def apply_related_fns(related_map, fn_to_apply, query_set, fields):
+            for related_obj, related_fields in related_map.items():
+                fields_mapped = [field for field in related_fields if field in fields]
+                if fields_mapped:
+                    query_set = getattr(query_set, fn_to_apply)(related_obj)
+            return query_set
+
+        serializer_class = self.get_serializer_class()
+        included_fields = self.filter_fields(serializer_class.Meta.fields, self.request)
+        final_query_set = serializer_class.Meta.model.objects.all()
+        if self.select_related_map:
+            final_query_set = apply_related_fns(self.select_related_map, "select_related", final_query_set, included_fields)
+
+        if self.prefetch_related_map:
+            final_query_set = apply_related_fns(self.prefetch_related_map, "prefetch_related", final_query_set, included_fields)
+        return final_query_set
+
+
+class ProductViewSet(FieldLimiterMixin, viewsets.ReadOnlyModelViewSet):
     serializer_class = ProductSerializer
     pagination_class = DefaultPagination
     filter_backends = (DjangoFilterBackend, OrderingFilter)
     filter_class = ProductListFilter
     ordering_fields = ('vendor_part_num', 'description', 'retail_price', 'jobber_price', 'min_price', 'core_charge', 'can_drop_ship', 'drop_ship_fee', 'vendor', 'category', 'sub_category',)
+    select_related_map = {
+        "vendor": ("vendor",),
+        "vendor_product_line": ("vendor_product_line",)
+    }
 
-    def get_queryset(self):
-        return Product.objects.select_related('vendor').select_related('vendor_product_line').prefetch_related('productcategory_set__category').prefetch_related("images").prefetch_related("productfitment_set").all()
-
-
-        # TODO: figure out how to order on the custom category/sub_category fields
-        # possible solution http://stackoverflow.com/questions/24987446/django-rest-framework-queryset-doesnt-order
+    prefetch_related_map = {
+        "productcategory_set__category": ("category", "sub_category",),
+        "images": ("images",),
+        "productfitment_set": ("fitment",)
+    }
 
 
 class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
