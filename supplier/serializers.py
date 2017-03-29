@@ -61,7 +61,7 @@ class ProductSerializer(serializers.ModelSerializer):
     def _get_category(self, product, is_sub_category=False):
         category = None
         for product_category in product.productcategory_set.all():
-            if (not is_sub_category and product_category.category.parent_category is None) or (is_sub_category and product_category.category.parent_category is not None):
+            if (not is_sub_category and product_category.category.parent_category_id is None) or (is_sub_category and product_category.category.parent_category_id is not None):
                 category = product_category.category
         return category
 
