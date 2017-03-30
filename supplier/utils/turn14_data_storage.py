@@ -100,16 +100,28 @@ class Turn14DataStorage:
             ProductImage.objects.bulk_create(create_objs)
 
     def _store_product_fitment(self, product_record, fitment):
-        ProductFitment.objects.filter(product=product_record).delete()
-        create_objs = list()
-        for fitment_item in fitment:
-            special_fitment = fitment_item.pop('special_fitment')
-            vehicle = self.store_or_get_vehicle(**fitment_item)
-            create_objs.append(ProductFitment(product=product_record, vehicle=vehicle, special_fitment=special_fitment))
-        if create_objs:
-            ProductFitment.objects.bulk_create(create_objs)
+        if fitment:
+            has_fitment = ProductFitment.objects.filter(product=product_record).count() > 0
+            if has_fitment:
+                fitment_vals = ProductFitment.objects.filter(product=product_record).select_related("vehicle__year").select_related("vehicle__make").select_related("vehicle__model").select_related("vehicle__sub_model").select_related("vehicle__engine")
 
-    def store_or_get_vehicle(self, year, make, model, sub_model, engine, **kwargs):
+                def fits_vehicle(year, make, model, sub_model, engine):
+                    for fitment_val in fitment_vals:
+                        v = fitment_val.vehicle
+                        if v.year.year == year and v.make.name == make and v.model.name == model and v.sub_model.name == sub_model and v.engine.name == engine:
+                            return True
+                    return False
+
+                for fitment_item in fitment:
+                    special_fitment = fitment_item.pop('special_fitment')
+                    if not fits_vehicle(**fitment_item):
+                        vehicle = self.store_or_get_vehicle(**fitment_item)
+                        ProductFitment.objects.get_or_create(product=product_record, vehicle=vehicle, special_fitment=special_fitment)
+            else:
+                pass
+                #implement batch insert here for vehicles
+
+    def store_or_get_vehicle(self, year, make, model, sub_model, engine):
         year_record = VehicleYear.objects.get_or_create(year=year)[0]
         make_record = VehicleMake.objects.get_or_create(name=make)[0]
         model_record = VehicleModel.objects.get_or_create(name=model, make=make_record)[0]
