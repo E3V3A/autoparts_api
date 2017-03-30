@@ -16,6 +16,7 @@ from .turn14_data_storage import Turn14DataStorage
 
 logger = logging.getLogger(__name__)
 
+
 class Turn14DataImporter:
     PRODUCT_URL = "https://www.turn14.com/export.php"
     SEARCH_URL = "https://www.turn14.com/search/index.php"
@@ -63,14 +64,18 @@ class Turn14DataImporter:
         future_results = dict()
         num_retries = kwargs['num_retries'] if 'num_retries' in kwargs else 0
         refresh_all = kwargs['refresh_all'] if 'refresh_all' in kwargs else False
+        data_storage = Turn14DataStorage()
 
         def store_results():
             try:
+                data = list()
+                # gather all the future results before hitting db to close the future out
                 for future in futures.as_completed(future_results):
                     part_num = future_results[future]
-                    web_results = future.result()
-                    if web_results['is_valid_item']:
-                        Turn14DataStorage().save({**csv_results[part_num], **web_results})
+                    data.append({**csv_results[part_num], **future.result()})
+                for data_item in data:
+                    if data_item['is_valid_item']:
+                        data_storage.save(data_item)
             finally:
                 future_results.clear()
                 csv_results.clear()
