@@ -99,55 +99,116 @@ class Turn14DataStorage:
         if create_objs:
             ProductImage.objects.bulk_create(create_objs)
 
+    @staticmethod
+    def _fitment_exists(fitment_item, existing_fitment_models):
+        for fitment_model in existing_fitment_models:
+            v = fitment_model.vehicle
+            if (
+                                                v.make.name == fitment_item['make']
+                                        and v.model.name == fitment_item['model']
+                                    and v.sub_model.name == fitment_item['sub_model']
+                                and v.engine.name == fitment_item['engine']
+                            and fitment_model.start_year == fitment_item['start_year']
+                        and fitment_model.end_year == fitment_item['end_year']
+                    and fitment_model.note == fitment_item['note']
+            ):
+                return True
+        return False
+
+    @staticmethod
+    def _vehicle_has_year(vehicle_id, year, vehicle_year_models):
+        for vehicle_year in vehicle_year_models:
+            if vehicle_year.vehicle_id == vehicle_id and vehicle_year.year == year:
+                return True
+        return False
+
+    def _get_vehicle(self, make, model, sub_model, engine, vehicle_models):
+        vehicle = None
+        for v in vehicle_models:
+            if v.make.name == make and v.model.name == model and v.sub_model.name == sub_model and v.engine.name == engine:
+                vehicle = v
+        if not vehicle:
+            vehicle = self.store_or_get_vehicle(make, model, sub_model, engine)
+        key = "%s-%s-%s-%s" % (make, model, sub_model, engine)
+        return {
+            'key': key,
+            'vehicle': vehicle
+        }
+
     def _store_product_fitment(self, product_record, fitment):
-        if fitment:
-            has_fitment = ProductFitment.objects.filter(product=product_record).count() > 0
-            if has_fitment:
-                fitment_vals = ProductFitment.objects.filter(product=product_record).select_related("vehicle__year").select_related("vehicle__make").select_related("vehicle__model").select_related("vehicle__sub_model").select_related("vehicle__engine").all()
+        print(product_record.internal_part_num)
+        existing_fitment_models = ProductFitment.objects.filter(product=product_record).select_related("vehicle").all()
+        if not fitment and existing_fitment_models:
+            existing_fitment_models.delete()
+        elif fitment:
+            makes = list()
+            models = list()
+            vehicle_years = dict()
+            fitment_mismatch = False
 
-                def fits_vehicle(year, make, model, sub_model, engine):
-                    for fitment_val in fitment_vals:
-                        v = fitment_val.vehicle
-                        if v.year.year == year and v.make.name == make and v.model.name == model and v.sub_model.name == sub_model and v.engine.name == engine:
-                            return True
-                    return False
+            for fitment_item in fitment:
+                if not fitment_mismatch and existing_fitment_models:
+                    if not self._fitment_exists(fitment_item, existing_fitment_models):
+                        fitment_mismatch = True
+                key = "%s-%s-%s-%s" % (fitment_item['make'], fitment_item['model'], fitment_item['sub_model'], fitment_item['engine'])
+                if key not in vehicle_years:
+                    vehicle_years[key] = list()
+                for year in range(fitment_item['start_year'], fitment_item['end_year'] + 1):
+                    if year not in vehicle_years[key]:
+                        vehicle_years[key].append(year)
+                if not fitment_item['model'] in models:
+                    models.append(fitment_item['model'])
+                if not fitment_item['make'] in makes:
+                    makes.append(fitment_item['make'])
+            do_create = False
+            if existing_fitment_models and fitment_mismatch:
+                existing_fitment_models.delete()
+                do_create = True
+            elif not existing_fitment_models:
+                do_create = True
 
+            if do_create:
+                vehicle_models = Vehicle.objects.filter(make__name__in=makes, model__name__in=models).select_related("make").select_related("model").select_related("sub_model").select_related("engine").all()
+                vehicles_used = dict()
+
+                fitment_create_objs = list()
                 for fitment_item in fitment:
-                    special_fitment = fitment_item.pop('special_fitment')
-                    if not fits_vehicle(**fitment_item):
-                        vehicle = self.store_or_get_vehicle(**fitment_item)
-                        ProductFitment.objects.get_or_create(product=product_record, vehicle=vehicle, special_fitment=special_fitment)
-            else:
-                years = list()
-                makes = list()
-                for fitment_item in fitment:
-                    if not fitment_item['year'] in years:
-                        years.append(fitment_item['year'])
-                    if not fitment_item['make'] in makes:
-                        makes.append(fitment_item['make'])
-                vehicles = Vehicle.objects.filter(year__year__in=years, make__name__in=makes).select_related("year").select_related("make").select_related("model").select_related("sub_model").select_related("engine").all()
+                    note = fitment_item.pop('note')
+                    start_year = fitment_item.pop('start_year')
+                    end_year = fitment_item.pop('end_year')
+                    vehicle_obj = self._get_vehicle(**{**fitment_item, **{'vehicle_models': vehicle_models}})
+                    vehicle = vehicle_obj['vehicle']
+                    vehicles_used[vehicle.pk] = vehicle_obj
+                    fitment_create_objs.append(ProductFitment(product=product_record, vehicle=vehicle, start_year=start_year, end_year=end_year, note=note))
+                if fitment_create_objs:
+                    year_create_objs = list()
+                    vehicle_year_models = VehicleYear.objects.filter(vehicle_id__in=vehicles_used.keys()).all()
 
-                def get_vehicle(year, make, model, sub_model, engine):
-                    for v in vehicles:
-                        if v.year.year == year and v.make.name == make and v.model.name == model and v.sub_model.name == sub_model and v.engine.name == engine:
-                            return v
-                    return self.store_or_get_vehicle(year, make, model, sub_model, engine)
+                    for vehicle_id, vehicle_data in vehicles_used.items():
+                        key = vehicle_data['key']
+                        vehicle = vehicle_data['vehicle']
+                        years = vehicle_years[key]
+                        for year in years:
+                            if not self._vehicle_has_year(vehicle_id, year, vehicle_year_models):
+                                year_create_objs.append(VehicleYear(year=year, vehicle=vehicle))
+                    if fitment_create_objs:
 
-                create_objs = list()
-                for fitment_item in fitment:
-                    special_fitment = fitment_item.pop('special_fitment')
-                    vehicle = get_vehicle(**fitment_item)
-                    create_objs.append(ProductFitment(product=product_record, vehicle=vehicle, special_fitment=special_fitment))
-                if create_objs:
-                    ProductFitment.objects.bulk_create(create_objs)
+                    for fitment_obj in fitment_create_objs:
+                        try:
+                            print(fitment_obj.start_year, fitment_obj.end_year, fitment_obj.vehicle.make.name, fitment_obj.vehicle.model.name, fitment_obj.vehicle.sub_model.name, fitment_obj.vehicle.engine.name, fitment_obj.note)
+                            fitment_obj.save()
+                        except Exception as e:
+                            print(e)
+                            print("test")
+                    if year_create_objs:
+                        VehicleYear.objects.bulk_create(year_create_objs)
 
-    def store_or_get_vehicle(self, year, make, model, sub_model, engine):
-        year_record = VehicleYear.objects.get_or_create(year=year)[0]
+    def store_or_get_vehicle(self, make, model, sub_model, engine):
         make_record = VehicleMake.objects.get_or_create(name=make)[0]
         model_record = VehicleModel.objects.get_or_create(name=model, make=make_record)[0]
         sub_model_record = VehicleSubModel.objects.get_or_create(name=sub_model, model=model_record)[0]
         engine_record = VehicleEngine.objects.get_or_create(name=engine)[0]
-        return Vehicle.objects.get_or_create(year=year_record, make=make_record, model=model_record, sub_model=sub_model_record, engine=engine_record)[0]
+        return Vehicle.objects.get_or_create(make=make_record, model=model_record, sub_model=sub_model_record, engine=engine_record)[0]
 
     @staticmethod
     def product_exists(internal_part_num):

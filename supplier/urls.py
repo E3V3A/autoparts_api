@@ -8,7 +8,7 @@ app_name = 'supplier'
 router = DefaultRouter()
 router.register(r'vendors', views.VendorViewSet)
 router.register(r'products', views.ProductViewSet, base_name="products")
-router.register(r'categories', views.CategoryViewSet)
+router.register(r'categories', views.CategoryViewSet, base_name='categories')
 
 urlpatterns = [
     url(r'^', include(router.urls)),

@@ -79,7 +79,7 @@ class ProductViewSet(FieldLimiterMixin, viewsets.ReadOnlyModelViewSet):
     prefetch_related_map = (
         (("productcategory_set__category",), ("category", "sub_category",)),
         (("images",), ("images",)),
-        ((fit_obj + "year", fit_obj + "make", fit_obj + "model", fit_obj + "sub_model", fit_obj + "engine",), ("fitment",))
+        ((fit_obj + "make", fit_obj + "model", fit_obj + "sub_model", fit_obj + "engine",), ("fitment",))
     )
 
 class CategoryViewSet(viewsets.ReadOnlyModelViewSet):

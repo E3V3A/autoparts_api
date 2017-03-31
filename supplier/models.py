@@ -154,11 +154,11 @@ class VehicleYear(Base):
 
 
 class ProductFitment(Base):
-    year_start = models.PositiveIntegerField(db_index=True)
-    year_end = models.PositiveIntegerField(db_index=True)
+    start_year = models.PositiveIntegerField(db_index=True)
+    end_year = models.PositiveIntegerField(db_index=True)
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     vehicle = models.ForeignKey(Vehicle, on_delete=models.CASCADE)
-    note = models.CharField(max_length=300, null=True)
+    note = models.CharField(max_length=300, null=True, db_index=True)
 
     class Meta:
-        unique_together = ("year_start", "year_end", "product", "vehicle", "note",)
+        unique_together = ("start_year", "end_year", "product", "vehicle", "note",)

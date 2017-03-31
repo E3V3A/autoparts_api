@@ -296,16 +296,19 @@ class Turn14DataImporter:
                         num_matches = len(fitment_note_matches)
                         for idx, fitment_note_match in enumerate(fitment_note_matches):
                             year = fitment_note_match[0]
-                            if not fitment_note_start_year:
-                                fitment_note_start_year = year
-                                fitment_text = fitment_note_match[1].strip()
-                            next_idx = idx+1
-                            next_text = fitment_text
-                            if next_idx < num_matches:
-                                next_text = fitment_note_matches[next_idx][1].strip()
-                            if fitment_text != next_text or idx + 1 == num_matches:
-                                fitment_notes[str(fitment_note_start_year) + "-" + str(year)] = fitment_text
-                                fitment_note_start_year = None
+                            if year >= start_year and year <= end_year:
+                                if not fitment_note_start_year:
+                                    fitment_note_start_year = year
+                                    fitment_text = fitment_note_match[1].strip()
+                                next_idx = idx+1
+                                next_text = fitment_text
+                                if next_idx < num_matches:
+                                    next_text = fitment_note_matches[next_idx][1].strip()
+                                if fitment_text != next_text or year == end_year:
+                                    fitment_notes[str(fitment_note_start_year) + "-" + str(year)] = fitment_text
+                                    fitment_note_start_year = None
+                                    if year == end_year:
+                                        break
                     fitment_store = {
                         'make': make,
                         'model': model,
@@ -318,7 +321,7 @@ class Turn14DataImporter:
                             year_tokens = year_range.split("-")
                             fitment_note_start_year = int(year_tokens[0])
                             fitment_note_end_year = int(year_tokens[1])
-                            fitment_data['fitment'].append({**fitment_store, **{'start_year': fitment_note_start_year, 'end_year': fitment_note_end_year, 'fitment_note': note}})
+                            fitment_data['fitment'].append({**fitment_store, **{'start_year': fitment_note_start_year, 'end_year': fitment_note_end_year, 'note': note}})
                     else:
-                        fitment_data['fitment'].append({**fitment_store, **{'start_year': int(start_year), 'end_year': int(end_year), 'fitment_note': None}})
+                        fitment_data['fitment'].append({**fitment_store, **{'start_year': int(start_year), 'end_year': int(end_year), 'note': None}})
         return fitment_data
