@@ -21,11 +21,10 @@ from django.contrib import admin
 from some_tech_store_api import settings
 
 urlpatterns = [
-    url(r'^__debug__/', include(debug_toolbar.urls)),
     url(r'^admin/', admin.site.urls),
     url(r'^', include('supplier.urls', namespace='supplier')),
     url(r'^api-auth/', include('rest_framework.urls', namespace='rest_framework')),
-]
+] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
 if settings.DEBUG is True:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+    urlpatterns.append(url(r'^__debug__/', include(debug_toolbar.urls)))

@@ -151,9 +151,7 @@ class Turn14DataStorage:
 
     @staticmethod
     def product_exists(internal_part_num):
-        if len(Product.objects.filter(internal_part_num=internal_part_num)):
-            return True
-        return False
+        return Product.objects.filter(internal_part_num=internal_part_num).exists()
 
     @staticmethod
     def string_to_decimal(value):

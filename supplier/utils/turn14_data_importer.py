@@ -216,7 +216,7 @@ class Turn14DataImporter:
         model_regex = re.compile("vmmModel=" + anything_regex, re.IGNORECASE)
         sub_model_regex = re.compile("vmmSubmodel=" + anything_regex, re.IGNORECASE)
         engine_regex = re.compile("vmmEngine=" + anything_regex, re.IGNORECASE)
-        special_fitment_regex = re.compile("(\d{4}):(.+?)$", re.IGNORECASE | re.MULTILINE)
+        fitment_note_regex = re.compile("(\d{4}):(.+?)$", re.IGNORECASE | re.MULTILINE)
         category_regex = re.compile("vmmCategory=" + anything_regex)
 
         fitment_data = {
@@ -287,19 +287,38 @@ class Turn14DataImporter:
                     year_range_match = year_range_regex.search(fitment_text)
                     if year_range_match:
                         start_year = year_range_match.group(1)
-                    special_fitment = {}
-                    special_fitment_section = fitment_section.cssselect("pre.notesText")
-                    if special_fitment_section:
-                        special_fitment_section = special_fitment_section[0]
-                        for special_fitment_match in special_fitment_regex.findall(special_fitment_section.text):
-                            special_fitment[special_fitment_match[0]] = special_fitment_match[1].strip()
-                    for year in range(int(start_year), int(end_year) + 1):
-                        fitment_data['fitment'].append({
-                            'year': year,
-                            'make': make,
-                            'model': model,
-                            'sub_model': sub_model,
-                            'engine': engine,
-                            'special_fitment': special_fitment[str(year)] if str(year) in special_fitment else None
-                        })
+                    fitment_notes = {}
+                    fitment_note_section = fitment_section.cssselect("pre.notesText")
+                    if fitment_note_section:
+                        fitment_note_section = fitment_note_section[0]
+                        fitment_note_start_year = None
+                        fitment_note_matches = fitment_note_regex.findall(fitment_note_section.text)
+                        num_matches = len(fitment_note_matches)
+                        for idx, fitment_note_match in enumerate(fitment_note_matches):
+                            year = fitment_note_match[0]
+                            if not fitment_note_start_year:
+                                fitment_note_start_year = year
+                                fitment_text = fitment_note_match[1].strip()
+                            next_idx = idx+1
+                            next_text = fitment_text
+                            if next_idx < num_matches:
+                                next_text = fitment_note_matches[next_idx][1].strip()
+                            if fitment_text != next_text or idx + 1 == num_matches:
+                                fitment_notes[str(fitment_note_start_year) + "-" + str(year)] = fitment_text
+                                fitment_note_start_year = None
+                    fitment_store = {
+                        'make': make,
+                        'model': model,
+                        'sub_model': sub_model,
+                        'engine': engine,
+                    }
+
+                    if fitment_notes:
+                        for year_range, note in fitment_notes.items():
+                            year_tokens = year_range.split("-")
+                            fitment_note_start_year = int(year_tokens[0])
+                            fitment_note_end_year = int(year_tokens[1])
+                            fitment_data['fitment'].append({**fitment_store, **{'start_year': fitment_note_start_year, 'end_year': fitment_note_end_year, 'fitment_note': note}})
+                    else:
+                        fitment_data['fitment'].append({**fitment_store, **{'start_year': int(start_year), 'end_year': int(end_year), 'fitment_note': None}})
         return fitment_data

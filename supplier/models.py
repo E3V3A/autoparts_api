@@ -103,10 +103,6 @@ class ProductImage(Base):
     """
 
 
-class VehicleYear(Base):
-    year = models.PositiveIntegerField(db_index=True, unique=True)
-
-
 class VehicleMake(Base):
     name = models.CharField(max_length=50, db_index=True, unique=True)
 
@@ -119,10 +115,6 @@ class VehicleModel(Base):
         unique_together = ("name", "make",)
 
 
-class VehicleEngine(Base):
-    name = models.CharField(max_length=50, db_index=True, unique=True)
-
-
 class VehicleSubModel(Base):
     name = models.CharField(max_length=50, db_index=True)
     model = models.ForeignKey(VehicleModel, on_delete=models.CASCADE)
@@ -131,18 +123,42 @@ class VehicleSubModel(Base):
         unique_together = ("name", "model",)
 
 
+class VehicleEngine(Base):
+    name = models.CharField(max_length=50, db_index=True, unique=True)
+
+
+class VehicleSubModelEngine(Base):
+    sub_model = models.ForeignKey(VehicleSubModel, on_delete=models.CASCADE)
+    engine = models.ForeignKey(VehicleEngine, on_delete=models.CASCADE)
+
+    class Meta:
+        unique_together = ("sub_model", "engine",)
+
+
 class Vehicle(Base):
-    year = models.ForeignKey(VehicleYear, on_delete=models.CASCADE)
     make = models.ForeignKey(VehicleMake, on_delete=models.CASCADE)
     model = models.ForeignKey(VehicleModel, on_delete=models.CASCADE)
     sub_model = models.ForeignKey(VehicleSubModel, on_delete=models.CASCADE)
     engine = models.ForeignKey(VehicleEngine, on_delete=models.CASCADE)
 
+    class Meta:
+        unique_together = ("make", "model", "sub_model", "engine",)
 
-class ProductFitment(Base):
-    product = models.ForeignKey(Product, on_delete=models.CASCADE)
+
+class VehicleYear(Base):
     vehicle = models.ForeignKey(Vehicle, on_delete=models.CASCADE)
-    special_fitment = models.CharField(max_length=300, null=True)
+    year = models.PositiveIntegerField(db_index=True)
 
     class Meta:
-        unique_together = ("product", "vehicle",)
+        unique_together = ("year", "vehicle",)
+
+
+class ProductFitment(Base):
+    year_start = models.PositiveIntegerField(db_index=True)
+    year_end = models.PositiveIntegerField(db_index=True)
+    product = models.ForeignKey(Product, on_delete=models.CASCADE)
+    vehicle = models.ForeignKey(Vehicle, on_delete=models.CASCADE)
+    note = models.CharField(max_length=300, null=True)
+
+    class Meta:
+        unique_together = ("year_start", "year_end", "product", "vehicle", "note",)
