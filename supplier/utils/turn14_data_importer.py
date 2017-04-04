@@ -8,6 +8,7 @@ from concurrent import futures
 from io import BytesIO, StringIO
 
 import requests
+from django.conf import settings
 from lxml import html
 from requests import RequestException
 from requests.adapters import HTTPAdapter
@@ -23,16 +24,9 @@ class Turn14DataImporter:
     PART_URL = "https://www.turn14.com/ajax_scripts/vmm.php?action=product"
 
     def __init__(self, max_workers=15, max_retries=3, max_failed_items=100):
-        turn14_user = os.environ.get("turn14_user")
-        turn14_password = os.environ.get("turn14_password")
-        if not turn14_user:
-            raise ValueError("No variable turn14_user found in the environment")
-        if not turn14_password:
-            raise ValueError("No variable turn14_password found in the environment")
-
         self.login_data = {
-            "username": turn14_user,
-            "password": turn14_password
+            "username": settings.TURN14_USER,
+            "password": settings.TURN14_PASSWORD
         }
         self.max_workers = max_workers
         self.max_retries = max_retries
