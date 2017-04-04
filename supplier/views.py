@@ -71,6 +71,7 @@ class ProductViewSet(FieldLimiterMixin, viewsets.ReadOnlyModelViewSet):
     filter_backends = (DjangoFilterBackend, OrderingFilter)
     filter_class = ProductListFilter
     ordering_fields = ('vendor_part_num', 'description', 'retail_price', 'jobber_price', 'min_price', 'core_charge', 'can_drop_ship', 'drop_ship_fee', 'vendor', 'category', 'sub_category',)
+    ordering = ('vendor_part_num',)
     select_related_map = (
         (("vendor",), ("vendor",)),
         (("vendor_product_line",), ("vendor_product_line",))
@@ -90,6 +91,7 @@ class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
     filter_backends = (DjangoFilterBackend, OrderingFilter)
     filter_class = CategoryListFilters
     ordering_fields = ('name',)
+    ordering = ('name',)
 
 
 class VendorViewSet(viewsets.ReadOnlyModelViewSet):
@@ -100,8 +102,9 @@ class VendorViewSet(viewsets.ReadOnlyModelViewSet):
     filter_backends = (DjangoFilterBackend, OrderingFilter)
     filter_class = VendorListFilters
     ordering_fields = ('name',)
+    ordering = ('name',)
 
 
 def import_products(request):
-    Turn14DataImporter().import_and_store_product_data(refresh_all=True)
+    Turn14DataImporter().import_and_store_product_data(refresh_all=False)
     return HttpResponse("Doing work!")

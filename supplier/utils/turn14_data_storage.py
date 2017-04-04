@@ -136,7 +136,6 @@ class Turn14DataStorage:
         }
 
     def _store_product_fitment(self, product_record, fitment):
-        print(product_record.internal_part_num)
         existing_fitment_models = ProductFitment.objects.filter(product=product_record).select_related("vehicle").all()
         if not fitment and existing_fitment_models:
             existing_fitment_models.delete()
@@ -191,15 +190,7 @@ class Turn14DataStorage:
                         for year in years:
                             if not self._vehicle_has_year(vehicle_id, year, vehicle_year_models):
                                 year_create_objs.append(VehicleYear(year=year, vehicle=vehicle))
-                    if fitment_create_objs:
-
-                    for fitment_obj in fitment_create_objs:
-                        try:
-                            print(fitment_obj.start_year, fitment_obj.end_year, fitment_obj.vehicle.make.name, fitment_obj.vehicle.model.name, fitment_obj.vehicle.sub_model.name, fitment_obj.vehicle.engine.name, fitment_obj.note)
-                            fitment_obj.save()
-                        except Exception as e:
-                            print(e)
-                            print("test")
+                    ProductFitment.objects.bulk_create(fitment_create_objs)
                     if year_create_objs:
                         VehicleYear.objects.bulk_create(year_create_objs)
 

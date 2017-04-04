@@ -99,6 +99,7 @@ class Turn14DataImporter:
                                         store_results()
                             store_results()
         except:
+            #todo need to keep track and come up with a better restart point
             if num_retries < self.max_retries:
                 logger.error("Retrying parse and store due to error", exc_info=1)
                 self.import_and_store_product_data(refresh_all=refresh_all, num_retries=num_retries + 1)
@@ -131,6 +132,7 @@ class Turn14DataImporter:
         if part_search_data['is_valid_item']:
             part_data = {**part_search_data, **self._parse_item_data_from_detail(part_search_data['item_code'], part_search_data['primary_img_thumb'], session)}
         else:
+            part_data = part_search_data
             logger.info("Skipping part num {0} because it is a group buy".format(part_num))
         return part_data
 
@@ -165,10 +167,12 @@ class Turn14DataImporter:
             item_code = item_html.attrib['data-itemcode']
             # Skip group buys
             if item_code.isnumeric() and not 'data-productgroup' in item_html.attrib:
-                cost_search = item_html.cssselect("p.amount")
+                cost_search = item_html.cssselect("*.amount")
                 cost = None
                 if cost_search:
-                    cost = cost_search[0].text.replace("$", "").strip()
+                    for cost_search_el in cost_search:
+                        if "text-muted" not in cost_search_el.attrib['class']:
+                            cost = cost_search_el.text.replace("$", "").strip()
 
                 primary_image_search = item_html.cssselect("img.product-info")
                 primary_img_thumb = None
@@ -216,7 +220,6 @@ class Turn14DataImporter:
         model_regex = re.compile("vmmModel=" + anything_regex, re.IGNORECASE)
         sub_model_regex = re.compile("vmmSubmodel=" + anything_regex, re.IGNORECASE)
         engine_regex = re.compile("vmmEngine=" + anything_regex, re.IGNORECASE)
-        fitment_note_regex = re.compile("(\d{4}):(.+?)$", re.IGNORECASE | re.MULTILINE)
         category_regex = re.compile("vmmCategory=" + anything_regex)
 
         fitment_data = {
@@ -287,35 +290,16 @@ class Turn14DataImporter:
                     year_range_match = year_range_regex.search(fitment_text)
                     if year_range_match:
                         start_year = year_range_match.group(1)
-                    fitment_notes = {}
+                    fitment_notes = None
                     fitment_note_section = fitment_section.cssselect("pre.notesText")
                     if fitment_note_section:
-                        fitment_note_section = fitment_note_section[0]
-                        fitment_note_start_year = None
-                        fitment_note_matches = fitment_note_regex.findall(fitment_note_section.text)
-                        num_matches = len(fitment_note_matches)
-                        for idx, fitment_note_match in enumerate(fitment_note_matches):
-                            year = fitment_note_match[0]
-                            if year >= start_year and year <= end_year:
-                                if not fitment_note_start_year:
-                                    fitment_note_start_year = year
-                                    fitment_text = fitment_note_match[1].strip()
-                                next_idx = idx+1
-                                next_text = fitment_text
-                                if next_idx < num_matches:
-                                    next_text = fitment_note_matches[next_idx][1].strip()
-                                if fitment_text != next_text or year == end_year:
-                                    fitment_notes[str(fitment_note_start_year) + "-" + str(year)] = fitment_text
-                                    fitment_note_start_year = None
-                                    if year == end_year:
-                                        break
+                        fitment_notes = self._parse_fitment_notes(start_year, end_year, fitment_note_section[0])
                     fitment_store = {
                         'make': make,
                         'model': model,
                         'sub_model': sub_model,
                         'engine': engine,
                     }
-
                     if fitment_notes:
                         for year_range, note in fitment_notes.items():
                             year_tokens = year_range.split("-")
@@ -324,4 +308,86 @@ class Turn14DataImporter:
                             fitment_data['fitment'].append({**fitment_store, **{'start_year': fitment_note_start_year, 'end_year': fitment_note_end_year, 'note': note}})
                     else:
                         fitment_data['fitment'].append({**fitment_store, **{'start_year': int(start_year), 'end_year': int(end_year), 'note': None}})
+        fitment_data['fitment'] = self._optimize_fitment_data(fitment_data['fitment'])
         return fitment_data
+
+    def _parse_fitment_notes(self, start_year, end_year, fitment_note_section):
+        fitment_note_regex = re.compile("(\d{4}):(.+?)$", re.IGNORECASE | re.MULTILINE)
+        fitment_note_start_year = None
+        fitment_note_matches = fitment_note_regex.findall(fitment_note_section.text)
+        num_matches = len(fitment_note_matches)
+        fitment_notes = dict()
+        for idx, fitment_note_match in enumerate(fitment_note_matches):
+            year = fitment_note_match[0]
+            if start_year <= year <= end_year:
+                if not fitment_note_start_year:
+                    fitment_note_start_year = year
+                    fitment_text = fitment_note_match[1].strip()
+                next_idx = idx + 1
+                next_text = fitment_text
+                if next_idx < num_matches:
+                    next_text = fitment_note_matches[next_idx][1].strip()
+                if fitment_text != next_text or year == end_year:
+                    fitment_notes[str(fitment_note_start_year) + "-" + str(year)] = fitment_text
+                    fitment_note_start_year = None
+                    if year == end_year:
+                        break
+        return fitment_notes
+
+    def _optimize_fitment_data(self, fitment_data):
+        """
+        A lot of fitment data from turn14 is duplicated except for the start and end years
+        This function will combine any duplicated data into 1 record
+        """
+        if len(fitment_data) == 1:
+            return fitment_data
+        consolidated_fitment = dict()
+
+        def insert_in_order(_fitment_to_add):
+            _idx_to_add = None
+            for _idx, _fitment in enumerate(fitments):
+                if _fitment_to_add['start_year'] <= _fitment['start_year']:
+                    _idx_to_add = _idx
+                    break
+            if _idx_to_add:
+                fitments.insert(_idx_to_add, _fitment_to_add)
+            else:
+                fitments.append(_fitment_to_add)
+
+        def consolidate_fitment(fitments):
+            if len(fitments) > 1:
+                _consolidated_fitments = list()
+                _num_fitments = len(fitments)
+                for _idx, _fitment in enumerate(fitments):
+                    if _idx == 0:
+                        _consolidated_fitment = _fitment
+                        continue
+                    if _consolidated_fitment['start_year'] <= _fitment['start_year'] <= _consolidated_fitment['end_year']:
+                        end_year = _consolidated_fitment['end_year']
+                        _consolidated_fitment['end_year'] = _fitment['end_year'] if _fitment['end_year'] > end_year else end_year
+                    else:
+                        _consolidated_fitments.append(_consolidated_fitment)
+                        _consolidated_fitment = _fitment
+                        if _idx + 1 == _num_fitments:
+                            _consolidated_fitments.append(_consolidated_fitment)
+                    return _consolidated_fitments
+            else:
+                return fitments
+
+        for fitment in fitment_data:
+            note = fitment['note'] if 'note' in fitment else ""
+            key = "%s%s%s%s%s" % (fitment['make'], fitment['model'], fitment['sub_model'], fitment['engine'], note)
+            if key not in consolidated_fitment:
+                consolidated_fitment[key] = list()
+            fitments = consolidated_fitment[key]
+            if not len(fitments):
+                fitments.append(fitment)
+            else:
+                insert_in_order(fitment)
+        for key, fitments in consolidated_fitment.items():
+            consolidated_fitment[key] = consolidate_fitment(fitments)
+
+        optimized_fitments = list()
+        for key, fitments in consolidated_fitment.items():
+            optimized_fitments += fitments
+        return optimized_fitments

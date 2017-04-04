@@ -41,9 +41,9 @@ class Product(Base):
         (POSSIBLE_DROPSHIP, 'Possible'),
     )
 
-    internal_part_num = models.CharField(max_length=30, unique=True, db_index=True)
-    vendor_part_num = models.CharField(max_length=30, db_index=True)
-    internal_item_code = models.CharField(max_length=30, null=True, db_index=True)
+    internal_part_num = models.CharField(max_length=100, unique=True, db_index=True)
+    vendor_part_num = models.CharField(max_length=100, db_index=True)
+    internal_item_code = models.CharField(max_length=100, null=True, db_index=True)
     description = models.CharField(max_length=300, db_index=True)
     overview = models.TextField(null=True)
     cost = models.DecimalField(max_digits=7, decimal_places=2, null=True, db_index=True)
@@ -158,7 +158,7 @@ class ProductFitment(Base):
     end_year = models.PositiveIntegerField(db_index=True)
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     vehicle = models.ForeignKey(Vehicle, on_delete=models.CASCADE)
-    note = models.CharField(max_length=300, null=True, db_index=True)
+    note = models.CharField(max_length=2000, null=True)
 
     class Meta:
         unique_together = ("start_year", "end_year", "product", "vehicle", "note",)
