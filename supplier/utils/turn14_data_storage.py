@@ -50,8 +50,16 @@ class Turn14DataStorage:
                 'model': 'internal_part_num',
                 'serializer': None
             },
-            'overview': {
-                'model': 'overview',
+            'long_description': {
+                'model': 'long_description',
+                'serializer': None
+            },
+            'name': {
+                'model': 'name',
+                'serializer': None
+            },
+            'is_carb_legal': {
+                'model': 'is_carb_legal',
                 'serializer': None
             },
             'cost': {

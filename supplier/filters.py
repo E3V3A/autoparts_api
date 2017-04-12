@@ -62,7 +62,7 @@ class ProductListFilter(django_filters.rest_framework.FilterSet):
 
     class Meta:
         model = Product
-        fields = ('vendor_part_num',)
+        fields = ('internal_part_num', 'vendor_part_num', 'is_carb_legal',)
 
 
 class SimpleIdListFilter(django_filters.rest_framework.FilterSet):
