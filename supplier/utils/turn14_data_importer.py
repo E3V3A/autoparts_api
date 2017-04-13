@@ -122,7 +122,6 @@ class Turn14DataImporter:
         part_search_response = self.do_request(session, "get", part_search_url)
         part_search_html = html.fromstring(part_search_response.content.decode("utf-8", errors="ignore"))
         part_search_data = self._parse_item_data_from_search(part_search_html)
-        part_data = dict()
         if part_search_data['is_valid_item']:
             part_data = {**part_search_data, **self._parse_item_data_from_detail(part_search_data['item_code'], part_search_data['primary_img_thumb'], session)}
         else:
@@ -155,17 +154,23 @@ class Turn14DataImporter:
             'is_valid_item': False
         }
         if item_search:
+            xpath_text = "translate(text(),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz')"
             item_html = item_search[0]
             item_code = item_html.attrib['data-itemcode']
             # Skip group buys
             if item_code.isnumeric() and not 'data-productgroup' in item_html.attrib:
                 cost_search = item_html.cssselect("*.amount")
+                name_search = item_html.xpath("//*[contains(" + xpath_text + ",'product name')]/following-sibling::text()")
+                carb_legal_search = item_html.xpath("//*[contains(" + xpath_text + ",'not carb legal')]")
                 cost = None
+                name = ""
+                is_carb_legal = False if carb_legal_search else True
                 if cost_search:
                     for cost_search_el in cost_search:
                         if "text-muted" not in cost_search_el.attrib['class']:
                             cost = cost_search_el.text.replace("$", "").strip()
-
+                if name_search:
+                    name = name_search[0].strip()
                 primary_image_search = item_html.cssselect("img.product-info")
                 primary_img_thumb = None
                 if primary_image_search:
@@ -179,6 +184,8 @@ class Turn14DataImporter:
                 part_data['is_valid_item'] = True
                 part_data['item_code'] = item_code.strip()
                 part_data['cost'] = cost
+                part_data['name'] = name
+                part_data['is_carb_legal'] = is_carb_legal
                 part_data['primary_img_thumb'] = primary_img_thumb
                 part_data['product_line'] = product_line
         return part_data
@@ -200,7 +207,7 @@ class Turn14DataImporter:
         part_detail_data['fitment'] = fitment_data['fitment']
 
         part_detail_data['images'] = self._parse_images(part_detail_html, primary_img_thumb)
-        part_detail_data['overview'] = overview
+        part_detail_data['long_description'] = overview
         return part_detail_data
 
     def _parse_fitment(self, part_detail_html):

@@ -94,5 +94,5 @@ class ProductSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
         fields = (
-            'id', 'internal_part_num', 'vendor_part_num', 'description', 'overview', 'cost', 'retail_price', 'jobber_price', 'min_price', 'core_charge', 'can_drop_ship', 'drop_ship_fee', 'vendor', 'vendor_product_line', 'category', 'sub_category',
-            'images', 'remote_image_thumb', 'fitment',)
+            'id', 'internal_part_num', 'vendor_part_num', 'name', 'description', 'long_description', 'cost', 'retail_price', 'jobber_price', 'min_price', 'core_charge', 'can_drop_ship', 'drop_ship_fee', 'vendor', 'vendor_product_line', 'category', 'sub_category',
+            'images', 'remote_image_thumb', 'fitment', 'is_carb_legal')
