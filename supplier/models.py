@@ -92,8 +92,10 @@ class ImageStorage(FileSystemStorage):
 
 class ProductImage(Base):
     # image_file = models.ImageField(upload_to="products/", max_length=150, storage=ImageStorage(), db_index=True)
-    remote_image_file = models.CharField(max_length=150, db_index=True)
+    remote_image_file = models.CharField(max_length=150, db_index=True, null=False)
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="images")
+    is_primary = models.BooleanField(default=False, null=False, db_index=True)
+
     """
     below for handling duplicates
 

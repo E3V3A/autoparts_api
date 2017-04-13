@@ -95,7 +95,7 @@ class Turn14DataStorage:
         for image_stack in images:
             img_url = image_stack['large_img'] if image_stack['large_img'] else image_stack['med_img']
             if img_url:
-                create_objs.append(ProductImage(product=product_record, remote_image_file=img_url))
+                create_objs.append(ProductImage(product=product_record, is_primary=image_stack['is_primary'], remote_image_file=img_url))
         if create_objs:
             ProductImage.objects.bulk_create(create_objs)
 

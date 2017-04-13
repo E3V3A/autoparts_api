@@ -40,7 +40,7 @@ class ProductImageSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ProductImage
-        fields = ('url',)
+        fields = ('url', 'is_primary',)
 
 
 class ProductFitmentSerializer(serializers.ModelSerializer):

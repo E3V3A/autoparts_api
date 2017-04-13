@@ -140,14 +140,12 @@ class Turn14DataImporter:
             img_group = {
                 "thumb_img": thumb_img,
                 "med_img": attributes["data-mediumimage"] if "data-mediumimage" in attributes else "",
-                "large_img": attributes["data-largeimage"] if "data-largeimage" in attributes else ""
+                "large_img": attributes["data-largeimage"] if "data-largeimage" in attributes else "",
+                "is_primary": False
             }
-            if not primary_img_group and primary_img_thumb and primary_img_thumb == thumb_img:
-                primary_img_group = img_group
-            else:
-                images.append(img_group)
-        if primary_img_group:
-            images.insert(0, primary_img_group)
+            if primary_img_thumb and primary_img_thumb == thumb_img:
+                img_group["is_primary"] = True
+            images.append(img_group)
         return images
 
     def _parse_item_data_from_search(self, part_search_html):
