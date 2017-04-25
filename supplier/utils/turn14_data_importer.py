@@ -46,7 +46,7 @@ class Turn14DataImporter:
     def do_request(request_obj, http_fn, url, **kwargs):
         logger.info("Sending {0} request to {1}".format(http_fn, url))
         if "timeout" not in kwargs:
-            kwargs["timeout"] = 60
+            kwargs["timeout"] = 120
         response_or_future = getattr(request_obj, http_fn)(url, **kwargs)
         if hasattr(response_or_future, "raise_for_status"):
             response_or_future.raise_for_status()
