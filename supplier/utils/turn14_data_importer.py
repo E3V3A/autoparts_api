@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 class Turn14DataImporter:
     PRODUCT_URL = "https://www.turn14.com/export.php"
+    STOCK_URL = "https://www.turn14.com/export.php?action=inventory_feed"
     SEARCH_URL = "https://www.turn14.com/search/index.php"
     PART_URL = "https://www.turn14.com/ajax_scripts/vmm.php?action=product"
 
@@ -53,11 +54,9 @@ class Turn14DataImporter:
         logger.info("{0} request to {1} completed".format(http_fn, url))
         return response_or_future
 
-    def import_and_store_product_data(self, **kwargs):
+    def import_and_store_product_data(self, refresh_all=False, num_retries=0):
         csv_results = dict()
         future_results = dict()
-        num_retries = kwargs['num_retries'] if 'num_retries' in kwargs else 0
-        refresh_all = kwargs['refresh_all'] if 'refresh_all' in kwargs else False
         data_storage = Turn14DataStorage()
 
         def store_results():
@@ -75,6 +74,7 @@ class Turn14DataImporter:
                 csv_results.clear()
 
         try:
+            logger.info("Importing products from turn14")
             with self._open_session() as session:
                 product_response = self.do_request(session, "post", self.PRODUCT_URL, timeout=120, data={"stockExport": "items"})
                 if product_response.headers["content-type"] != "application/zip":
@@ -89,17 +89,44 @@ class Turn14DataImporter:
                                 if refresh_all or not Turn14DataStorage.product_exists(internal_part_num):
                                     csv_results[internal_part_num] = data_row
                                     future_results[executor.submit(self._get_part_data, internal_part_num, session)] = internal_part_num
-                                    if len(future_results) == self.max_workers:
+                                    if len(future_results) ==  self.max_workers:
                                         store_results()
                             store_results()
+                            self.import_stock()
         except:
-            #todo need to keep track and come up with a better restart point
+            # todo need to keep track and come up with a better restart point
             if num_retries < self.max_retries:
                 logger.error("Retrying parse and store due to error", exc_info=1)
                 self.import_and_store_product_data(refresh_all=refresh_all, num_retries=num_retries + 1)
             else:
                 logger.error("The maximum retry count has been reached")
                 raise
+
+    def import_stock(self):
+        logger.info("Importing stock from turn14")
+        data_storage = Turn14DataStorage()
+        parts_to_update = dict()
+        update_blocks = 300
+
+        def update_stock():
+            try:
+                data_storage.update_stock(parts_to_update)
+            finally:
+                parts_to_update.clear()
+
+        with self._open_session() as session:
+            stock_response = self.do_request(session, "get", self.STOCK_URL, timeout=120)
+            if stock_response.headers["content-type"] != "application/zip":
+                raise RequestException("The data returned was not in zip format")
+            with BytesIO(stock_response.content) as file_stream:
+                zip_file = zipfile.ZipFile(file_stream)
+                with zip_file.open(zip_file.filelist[0]) as inventory_csv:
+                    csv_file = StringIO(inventory_csv.read().decode("utf-8", errors="ignore"))
+                    for data_row in csv.DictReader(csv_file):
+                        parts_to_update[data_row['InternalPartNumber']] = data_row['Stock']
+                        if len(parts_to_update) == update_blocks:
+                            update_stock()
+                    update_stock()
 
     def import_and_store_make_models(self):
         pass
@@ -132,7 +159,6 @@ class Turn14DataImporter:
     def _parse_images(self, part_detail_html, primary_img_thumb):
         images = list()
         img_thumbs = part_detail_html.cssselect("img[data-mediumimage]")
-        primary_img_group = None
         for img_thumb in img_thumbs:
             attributes = img_thumb.attrib
             thumb_img = attributes["src"] if "src" in attributes else ""

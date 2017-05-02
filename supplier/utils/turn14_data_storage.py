@@ -2,9 +2,13 @@ import re
 from decimal import Decimal
 
 import time
+
+import logging
 from django.db import transaction
 
 from supplier.models import Vendor, VendorProductLine, Category, Product, ProductCategory, ProductImage, ProductFitment, VehicleYear, VehicleMake, VehicleModel, VehicleEngine, VehicleSubModel, Vehicle
+from bulk_update.helper import bulk_update
+logger = logging.getLogger(__name__)
 
 
 class Turn14DataStorage:
@@ -73,7 +77,15 @@ class Turn14DataStorage:
         }
 
     @transaction.atomic
+    def update_stock(self, parts_to_update):
+        products = Product.objects.filter(internal_part_num__in=parts_to_update.keys()).all()
+        for product in products:
+            product.stock = parts_to_update[product.internal_part_num]
+        bulk_update(products, update_fields=['stock'])
+
+    @transaction.atomic
     def save(self, data_item):
+        #TODO can speed this up by doing bulk creates or updates
         vendor = Vendor.objects.get_or_create(name=data_item["PrimaryVendor"])[0]
         product_args = {
             'vendor': vendor

@@ -12,5 +12,6 @@ router.register(r'categories', views.CategoryViewSet, base_name='categories')
 
 urlpatterns = [
     url(r'^', include(router.urls)),
-    url(r'^import/$', views.import_products),
+    url(r'^import-products/$', views.import_products),
+    url(r'^import-stock/$', views.import_stock),
 ]

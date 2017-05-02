@@ -28,6 +28,8 @@ class ProductListFilter(django_filters.rest_framework.FilterSet):
     category_id = django_filters.BaseInFilter(method='category_filter')
     description = django_filters.CharFilter(method="description_filter")
     has_images = django_filters.BooleanFilter(method="has_images_filter")
+    min_stock = django_filters.NumberFilter(name="stock", lookup_expr='gte')
+    max_stock = django_filters.NumberFilter(name="stock", lookup_expr='lte')
 
     # If no image thumb, assume no images at all for faster filtering
     def has_images_filter(self, queryset, name, value):

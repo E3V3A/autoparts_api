@@ -83,6 +83,7 @@ class ProductViewSet(FieldLimiterMixin, viewsets.ReadOnlyModelViewSet):
         ((fit_obj + "make", fit_obj + "model", fit_obj + "sub_model", fit_obj + "engine",), ("fitment",))
     )
 
+
 class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
     # permission_classes = (permissions.IsAuthenticated,)
     queryset = Category.objects.all()
@@ -106,5 +107,11 @@ class VendorViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 def import_products(request):
-    Turn14DataImporter().import_and_store_product_data(refresh_all=False)
+    refresh_all = request.GET.get("refresh_all", False)
+    Turn14DataImporter().import_and_store_product_data(refresh_all=refresh_all)
     return HttpResponse("Doing work!")
+
+
+def import_stock(request):
+    Turn14DataImporter().import_stock()
+    return HttpResponse("Doing work!");
