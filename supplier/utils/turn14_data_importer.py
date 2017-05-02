@@ -63,12 +63,17 @@ class Turn14DataImporter:
             try:
                 data = list()
                 # gather all the future results before hitting db to close the future out
+                from timeit import default_timer as timer
                 for future in futures.as_completed(future_results):
                     part_num = future_results[future]
                     data.append({**csv_results[part_num], **future.result()})
-                for data_item in data:
-                    if data_item['is_valid_item']:
-                        data_storage.save(data_item)
+                start = timer()
+                # for data_item in data:
+                #     if data_item['is_valid_item']:
+                #         data_storage.save(data_item)
+                data_storage.optimized_save(data)
+                print(timer()-start)
+                print("done")
             finally:
                 future_results.clear()
                 csv_results.clear()
@@ -89,7 +94,7 @@ class Turn14DataImporter:
                                 if refresh_all or not Turn14DataStorage.product_exists(internal_part_num):
                                     csv_results[internal_part_num] = data_row
                                     future_results[executor.submit(self._get_part_data, internal_part_num, session)] = internal_part_num
-                                    if len(future_results) ==  self.max_workers:
+                                    if len(future_results) ==  100: #self.max_workers:
                                         store_results()
                             store_results()
                             self.import_stock()

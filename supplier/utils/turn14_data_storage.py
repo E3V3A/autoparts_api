@@ -8,6 +8,7 @@ from django.db import transaction
 
 from supplier.models import Vendor, VendorProductLine, Category, Product, ProductCategory, ProductImage, ProductFitment, VehicleYear, VehicleMake, VehicleModel, VehicleEngine, VehicleSubModel, Vehicle
 from bulk_update.helper import bulk_update
+
 logger = logging.getLogger(__name__)
 
 
@@ -84,8 +85,97 @@ class Turn14DataStorage:
         bulk_update(products, update_fields=['stock'])
 
     @transaction.atomic
+    def optimized_save(self, data):
+        vendor_objects, vendor_names = list(), list()
+        product_line_objects, product_line_names = list(), list()
+        category_objects, category_names = list(), list()
+        sub_category_objects, sub_category_names = list(), list()
+        product_data_lookup = dict()
+        for data_item in data:
+            if data_item['is_valid_item']:
+                internal_part_num, vendor, product_line = data_item["InternalPartNumber"], data_item["PrimaryVendor"], data_item["product_line"]
+                category, sub_category = data_item['category'], data_item['sub_category']
+                product_data_lookup[internal_part_num] = {
+                    "category": category,
+                    "sub_category": sub_category
+                }
+                if vendor not in vendor_names:
+                    vendor_objects.append({"name": vendor})
+                    vendor_names.append(vendor)
+                if product_line and product_line not in product_line_names:
+                    product_line_objects.append({"name": product_line, "vendor": vendor})
+                    product_line_names.append(product_line)
+                if category and category not in category_names:
+                    category_names.append(category)
+                    category_objects.append({"name": category, "parent_category": None})
+                if sub_category and sub_category not in sub_category_names:
+                    sub_category_names.append(sub_category)
+                    sub_category_objects.append({"name": sub_category, "parent_category": category})
+
+        vendor_retriever = DataRetriever(Vendor, Vendor.objects.filter(name__in=vendor_names))
+        vendor_records = vendor_retriever.bulk_get_or_create(vendor_objects, ("name",))
+        for product_line_object in product_line_objects:
+            product_line_object["vendor"] = vendor_records[product_line_object["vendor"]]
+        product_line_retriever = DataRetriever(VendorProductLine, VendorProductLine.objects.filter(name__in=product_line_names).select_related("vendor"))
+        product_line_records = product_line_retriever.bulk_get_or_create(product_line_objects, ("name", "vendor__name"))
+
+        category_retriever = DataRetriever(Category, Category.objects.filter(name__in=category_names, parent_category=None))
+        category_records = category_retriever.bulk_get_or_create(category_objects, ("name",))
+        for sub_category_object in sub_category_objects:
+            sub_category_object["parent_category"] = category_records[sub_category_object["parent_category"]]
+        sub_category_retriever = DataRetriever(Category, Category.objects.filter(name__in=sub_category_names, parent_category__name__isnull=False).select_related("parent_category"))
+        sub_category_records = sub_category_retriever.bulk_get_or_create(sub_category_objects, ("name", "parent_category__name"))
+
+        product_lookup = dict()
+        existing_product_records = Product.objects.filter(internal_part_num__in=product_data_lookup.keys()).all()
+        for existing_product in existing_product_records:
+            product_lookup[existing_product.internal_part_num] = existing_product
+        products_to_create = list()
+        internal_part_nums_to_create = list()
+        for data_item in data:
+            if data_item['is_valid_item']:
+                internal_part_num = data_item["InternalPartNumber"]
+                if internal_part_num not in product_lookup:
+                    product_data = product_data_lookup[internal_part_num]
+                    product_data['images'] = data_item['images']
+                    product_data['fitment'] = data_item['fitment']
+                    internal_part_nums_to_create.append(internal_part_num)
+                    vendor, product_line = data_item["PrimaryVendor"], data_item["product_line"]
+                    product_args = {
+                        'internal_part_num': internal_part_num,
+                        'vendor': vendor_records[vendor]
+                    }
+                    if product_line:
+                        product_args['vendor_product_line'] = product_line_records[product_line + vendor]
+                    for key, value in data_item.items():
+                        if key in self.product_data_mapping:
+                            data_mapper = self.product_data_mapping[key]
+                            product_args[data_mapper['model']] = data_mapper['serializer'](value) if data_mapper['serializer'] is not None else value
+                    products_to_create.append(Product(**product_args))
+        if products_to_create:
+            Product.objects.bulk_create(products_to_create)
+            created_products = Product.objects.filter(internal_part_num__in=internal_part_nums_to_create).all()
+            product_categories_to_create = list()
+            product_images_to_create = list()
+            for created_product in created_products:
+                product_data = product_data_lookup[created_product.internal_part_num]
+                category, sub_category = product_data["category"], product_data["sub_category"]
+                if category:
+                    category_record = category_records[category]
+                    product_categories_to_create.append(ProductCategory(product=created_product, category=category_record))
+                    if sub_category:
+                        sub_category_record = sub_category_records[sub_category + category]
+                        product_categories_to_create.append(ProductCategory(product=created_product, category=sub_category_record))
+                product_images_to_create += self._get_images_to_store(created_product, product_data['images'])
+                self._store_product_fitment(created_product, product_data['fitment'])
+            if product_categories_to_create:
+                ProductCategory.objects.bulk_create(product_categories_to_create)
+            if product_images_to_create:
+                ProductImage.objects.bulk_create(product_images_to_create)
+
+    @transaction.atomic
     def save(self, data_item):
-        #TODO can speed this up by doing bulk creates or updates
+        # TODO can speed this up by doing bulk creates or updates
         vendor = Vendor.objects.get_or_create(name=data_item["PrimaryVendor"])[0]
         product_args = {
             'vendor': vendor
@@ -108,6 +198,14 @@ class Turn14DataStorage:
             ProductCategory.objects.get_or_create(product=product_record, category=category_record)
         self._store_remote_images(product_record, data_item['images'])
         self._store_product_fitment(product_record, data_item['fitment'])
+
+    def _get_images_to_store(self, product_record, images):
+        images_to_create = list()
+        for image_stack in images:
+            img_url = image_stack['large_img'] if image_stack['large_img'] else image_stack['med_img']
+            if img_url:
+                images_to_create.append(ProductImage(product=product_record, is_primary=image_stack['is_primary'], remote_image_file=img_url))
+        return images_to_create
 
     def _store_remote_images(self, product_record, images):
         ProductImage.objects.filter(product=product_record).delete()
@@ -247,3 +345,40 @@ class Turn14DataStorage:
         if fee:
             return Decimal(fee.group(0))
         return None
+
+
+class DataRetriever(object):
+    def __init__(self, model_cls, query_set):
+        self.model_cls = model_cls
+        self.query_set = query_set
+
+    def get_instance(self, data):
+        for model in self.query_set:
+            model_compare = dict()
+            for key, value in data.items():
+                model_compare[key] = getattr(model, key)
+            if data == model_compare:
+                return model
+        return None
+
+    def bulk_get_or_create(self, data_list, keys):
+        items_to_create = list()
+        for data_item in data_list:
+            model_instance = self.get_instance(data_item)
+            if not model_instance:
+                items_to_create.append(self.model_cls(**data_item))
+        if items_to_create:
+            self.model_cls.objects.bulk_create(items_to_create)
+            self.query_set = self.query_set.all()
+        lookup = dict()
+        for model_instance in self.query_set:
+            lookup_key = ""
+            for key in keys:
+                next_attr = model_instance
+                # Key could be a relationship, go down the tree
+                key_tokens = key.split("__")
+                for key_token in key_tokens:
+                    next_attr = getattr(next_attr, key_token)
+                lookup_key += next_attr
+            lookup[lookup_key] = model_instance
+        return lookup
