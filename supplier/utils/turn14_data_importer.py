@@ -61,12 +61,12 @@ class Turn14DataImporter:
 
         def store_results():
             try:
-                data = list()
+                data = dict()
                 # gather all the future results before hitting db to close the future out
                 from timeit import default_timer as timer
                 for future in futures.as_completed(future_results):
                     part_num = future_results[future]
-                    data.append({**csv_results[part_num], **future.result()})
+                    data[part_num] = {**csv_results[part_num], **future.result()}
                 start = timer()
                 # for data_item in data:
                 #     if data_item['is_valid_item']:
