@@ -94,7 +94,7 @@ class Turn14DataImporter:
                                 if refresh_all or not Turn14DataStorage.product_exists(internal_part_num):
                                     csv_results[internal_part_num] = data_row
                                     future_results[executor.submit(self._get_part_data, internal_part_num, session)] = internal_part_num
-                                    if len(future_results) ==  100: #self.max_workers:
+                                    if len(future_results) == 100: #self.max_workers:
                                         store_results()
                             store_results()
                             self.import_stock()

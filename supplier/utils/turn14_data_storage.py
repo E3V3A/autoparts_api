@@ -127,7 +127,8 @@ class Turn14DataStorage:
         sub_category_records = sub_category_retriever.bulk_get_or_create(sub_category_objects, ("name", "parent_category__name"))
 
         product_lookup = dict()
-        existing_product_records = Product.objects.filter(internal_part_num__in=product_data_lookup.keys()).all()
+        existing_product_records = Product.objects.filter(internal_part_num__in=product_data_lookup.keys()).prefetch_related("productfitment_set__vehicle").all()
+        # existing_product_records = Product.objects.filter(internal_part_num__in=product_data_lookup.keys()).all()
         for existing_product in existing_product_records:
             product_lookup[existing_product.internal_part_num] = existing_product
         products_to_create = list()
@@ -135,7 +136,7 @@ class Turn14DataStorage:
         for data_item in data:
             if data_item['is_valid_item']:
                 internal_part_num = data_item["InternalPartNumber"]
-                if internal_part_num not in product_lookup:
+                if internal_part_num not in product_lookup and internal_part_num not in internal_part_nums_to_create:
                     product_data = product_data_lookup[internal_part_num]
                     product_data['images'] = data_item['images']
                     product_data['fitment'] = data_item['fitment']
@@ -167,7 +168,8 @@ class Turn14DataStorage:
                         sub_category_record = sub_category_records[sub_category + category]
                         product_categories_to_create.append(ProductCategory(product=created_product, category=sub_category_record))
                 product_images_to_create += self._get_images_to_store(created_product, product_data['images'])
-                self._store_product_fitment(created_product, product_data['fitment'])
+                # self._store_product_fitment(created_product, product_data['fitment'])
+                self._optimized_store_product_fitment(created_product, product_data['fitment'], product_lookup[created_product.internal_part_num].productfitment_set.all() if created_product.internal_part_num in product_lookup else None)
             if product_categories_to_create:
                 ProductCategory.objects.bulk_create(product_categories_to_create)
             if product_images_to_create:
@@ -252,6 +254,153 @@ class Turn14DataStorage:
             'key': key,
             'vehicle': vehicle
         }
+
+    def _optimized_get_vehicle(self, make, model, sub_model, engine, vehicle_lookup):
+        vehicle = None
+        vehicle_key = "%s%s%s%s" % (make, model, sub_model, engine)
+        if vehicle_key in vehicle_lookup:
+            vehicle = vehicle_lookup[vehicle_key]
+        if not vehicle:
+            vehicle = self.store_or_get_vehicle(make, model, sub_model, engine)
+        return vehicle
+
+    def _optimized_store_product_fitment(self, product_record, fitment, existing_fitment_records):
+        if not fitment and existing_fitment_records:
+            existing_fitment_records.delete()
+        elif fitment:
+            makes = list()
+            models = list()
+            vehicle_years = dict()
+            fitment_mismatch = False
+
+            for fitment_item in fitment:
+                if not fitment_mismatch and existing_fitment_records:
+                    if not self._fitment_exists(fitment_item, existing_fitment_records):
+                        fitment_mismatch = True
+                key = "%s%s%s%s" % (fitment_item['make'], fitment_item['model'], fitment_item['sub_model'], fitment_item['engine'])
+                if key not in vehicle_years:
+                    vehicle_years[key] = list()
+                for year in range(fitment_item['start_year'], fitment_item['end_year'] + 1):
+                    if year not in vehicle_years[key]:
+                        vehicle_years[key].append(year)
+                if not fitment_item['model'] in models:
+                    models.append(fitment_item['model'])
+                if not fitment_item['make'] in makes:
+                    makes.append(fitment_item['make'])
+            do_create = False
+            if existing_fitment_records and fitment_mismatch:
+                existing_fitment_records.delete()
+                do_create = True
+            elif not existing_fitment_records:
+                do_create = True
+            #vehicle_records = Vehicle.objects.filter(make__name__in=makes, model__name__in=models).select_related("make").select_related("model").select_related("sub_model").select_related("engine").all()
+            vehicle_lookup = dict()
+            # for vehicle_record in vehicle_records:
+            #     make, model, sub_model, engine = vehicle_record.make.name, vehicle_record.model.name, vehicle_record.sub_model.name, vehicle_record.engine.name
+            #     vehicle_lookup[make + model + sub_model + engine] = vehicle_record
+            if do_create:
+                make_objects, make_names = list(), list()
+                model_objects, model_names = dict(), list()
+                sub_model_objects, sub_model_names = dict(), list()
+                engine_objects, engine_names = list(), list()
+                vehicle_objects = dict()
+                use_bulk_creates, num_existing_vehicles, num_existing_threshold = True, 0, 1000
+                for fitment_item in fitment:
+                    make, model, sub_model, engine = fitment_item['make'], fitment_item['model'], fitment_item['sub_model'], fitment_item['engine']
+                    # vehicle_key = "%s%s%s%s" % (make, model, sub_model, engine)
+                    # if vehicle_key in vehicle_lookup:
+                    #     num_existing_vehicles += 1
+                    # if num_existing_vehicles > num_existing_threshold:
+                    #     use_bulk_creates = False
+                    #     break
+                    if make not in make_names:
+                        make_objects.append({"name": make})
+                        make_names.append(make)
+
+                    if engine not in engine_names:
+                        engine_objects.append({"name": engine})
+                        engine_names.append(engine)
+
+                    if model not in model_names:
+                        model_names.append(model)
+                    model_key = make + model
+                    if model_key not in model_objects:
+                        model_objects[model_key] = {"name": model, "make": make}
+                    if sub_model not in sub_model_names:
+                        sub_model_names.append(sub_model)
+                    sub_model_key = make + model + sub_model
+                    if sub_model_key not in sub_model_objects:
+                        sub_model_objects[sub_model_key] = {"name": sub_model, "model": model, "make": make}
+                    vehicle_key = "%s%s%s%s" % (make, model, sub_model, engine)
+                    if vehicle_key not in vehicle_objects:
+                        vehicle_objects[vehicle_key] = {
+                            "make": make,
+                            "model": model,
+                            "sub_model": sub_model,
+                            "engine": engine
+                        }
+                if use_bulk_creates:
+                    make_retriever = DataRetriever(VehicleMake, VehicleMake.objects.filter(name__in=make_names))
+                    make_records = make_retriever.bulk_get_or_create(make_objects, ("name",))
+
+                    engine_retriever = DataRetriever(VehicleEngine, VehicleEngine.objects.filter(name__in=engine_names))
+                    engine_records = engine_retriever.bulk_get_or_create(engine_objects, ("name",))
+
+                    for model_key, model_object in model_objects.items():
+                        model_object["make"] = make_records[model_object["make"]]
+
+                    model_retriever = DataRetriever(VehicleModel, VehicleModel.objects.filter(name__in=model_names).select_related("make"))
+                    model_records = model_retriever.bulk_get_or_create(model_objects.values(), ("make__name", "name",))
+
+                    for sub_model_key, sub_model_object in sub_model_objects.items():
+                        model_lookup_key = "%s%s" % (sub_model_object["make"], sub_model_object["model"])
+                        sub_model_object["model"] = model_records[model_lookup_key]
+                        sub_model_object.pop("make")
+
+                    sub_model_retriever = DataRetriever(VehicleSubModel, VehicleSubModel.objects.filter(name__in=sub_model_names).select_related("model__make"))
+                    sub_model_records = sub_model_retriever.bulk_get_or_create(sub_model_objects.values(), ("model__make__name", "model__name", "name",))
+
+                    for vehicle_key, vehicle_object in vehicle_objects.items():
+                        make, model, sub_model, engine = vehicle_object["make"], vehicle_object["model"], vehicle_object["sub_model"], vehicle_object["engine"]
+                        vehicle_object["make"] = make_records[make]
+                        vehicle_object["model"] = model_records[make + model]
+                        vehicle_object["sub_model"] = sub_model_records[make + model + sub_model]
+                        vehicle_object["engine"] = engine_records[engine]
+
+                    vehicle_retriever = DataRetriever(Vehicle, Vehicle.objects.filter(make__name__in=makes, model__name__in=models).select_related("make").select_related("model").select_related("sub_model").select_related("engine"))
+                    vehicle_records = vehicle_retriever.bulk_get_or_create(vehicle_objects.values(), ("make__name", "model__name", "sub_model__name", "engine__name",))
+                vehicles_used = dict()
+
+                fitment_create_objs = list()
+                for fitment_item in fitment:
+                    make, model, sub_model, engine = fitment_item['make'], fitment_item['model'], fitment_item['sub_model'], fitment_item['engine']
+                    vehicle_key = "%s%s%s%s" % (make, model, sub_model, engine)
+                    note = fitment_item.pop('note')
+                    start_year = fitment_item.pop('start_year')
+                    end_year = fitment_item.pop('end_year')
+                    if use_bulk_creates:
+                        vehicle_record = vehicle_records[vehicle_key]
+                    else:
+                        vehicle_record = self._optimized_get_vehicle(make, model, sub_model, engine, vehicle_records)
+                    vehicles_used[vehicle_record.pk] = {
+                        "key": vehicle_key,
+                        "vehicle": vehicle_record
+                    }
+                    fitment_create_objs.append(ProductFitment(product=product_record, vehicle=vehicle_record, start_year=start_year, end_year=end_year, note=note))
+                if fitment_create_objs:
+                    year_create_objs = list()
+                    vehicle_year_models = VehicleYear.objects.filter(vehicle_id__in=vehicles_used.keys()).all()
+
+                    for vehicle_id, vehicle_data in vehicles_used.items():
+                        key = vehicle_data['key']
+                        vehicle = vehicle_data['vehicle']
+                        years = vehicle_years[key]
+                        for year in years:
+                            if not self._vehicle_has_year(vehicle_id, year, vehicle_year_models):
+                                year_create_objs.append(VehicleYear(year=year, vehicle=vehicle))
+                    ProductFitment.objects.bulk_create(fitment_create_objs)
+                    if year_create_objs:
+                        VehicleYear.objects.bulk_create(year_create_objs)
 
     def _store_product_fitment(self, product_record, fitment):
         existing_fitment_models = ProductFitment.objects.filter(product=product_record).select_related("vehicle").all()
