@@ -71,7 +71,7 @@ class Turn14DataImporter:
                 # for data_item in data:
                 #     if data_item['is_valid_item']:
                 #         data_storage.save(data_item)
-                data_storage.optimized_save(data)
+                data_storage.save(data)
                 print(timer()-start)
                 print("done")
             finally:
