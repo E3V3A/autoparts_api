@@ -6,7 +6,7 @@ from rest_framework import viewsets
 from rest_framework.filters import OrderingFilter
 
 from supplier.filters import DefaultPagination, ProductListFilter, VendorListFilters, CategoryListFilters
-from supplier.models import Product, Category, Vendor
+from supplier.models import Category, Vendor
 from supplier.serializers import ProductSerializer, CategorySerializer, VendorSerializer
 from supplier.utils.turn14_data_importer import Turn14DataImporter
 

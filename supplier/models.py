@@ -12,7 +12,7 @@ class Base(models.Model):
 
 
 class Vendor(Base):
-    name = models.CharField(max_length=50, unique=True, db_index=True)
+    name = models.CharField(max_length=100, unique=True, db_index=True)
 
 
 class VendorProductLine(Base):
@@ -24,7 +24,7 @@ class VendorProductLine(Base):
 
 
 class Category(Base):
-    name = models.CharField(max_length=50, db_index=True)
+    name = models.CharField(max_length=100, db_index=True)
     parent_category = models.ForeignKey('self', on_delete=models.CASCADE, null=True, related_name='parent')
 
     class Meta:
@@ -109,11 +109,11 @@ class ProductImage(Base):
 
 
 class VehicleMake(Base):
-    name = models.CharField(max_length=50, db_index=True, unique=True)
+    name = models.CharField(max_length=100, db_index=True, unique=True)
 
 
 class VehicleModel(Base):
-    name = models.CharField(max_length=50, db_index=True)
+    name = models.CharField(max_length=100, db_index=True)
     make = models.ForeignKey(VehicleMake, on_delete=models.CASCADE)
 
     class Meta:
@@ -121,7 +121,7 @@ class VehicleModel(Base):
 
 
 class VehicleSubModel(Base):
-    name = models.CharField(max_length=50, db_index=True)
+    name = models.CharField(max_length=100, db_index=True)
     model = models.ForeignKey(VehicleModel, on_delete=models.CASCADE)
 
     class Meta:
@@ -129,7 +129,7 @@ class VehicleSubModel(Base):
 
 
 class VehicleEngine(Base):
-    name = models.CharField(max_length=50, db_index=True, unique=True)
+    name = models.CharField(max_length=100, db_index=True, unique=True)
 
 
 class VehicleSubModelEngine(Base):

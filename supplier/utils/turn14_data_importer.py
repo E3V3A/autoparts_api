@@ -1,6 +1,5 @@
 import csv
 import logging
-import os
 import re
 import urllib
 import zipfile
@@ -54,26 +53,21 @@ class Turn14DataImporter:
         logger.info("{0} request to {1} completed".format(http_fn, url))
         return response_or_future
 
-    def import_and_store_product_data(self, refresh_all=False, num_retries=0):
+    def import_and_store_product_data(self, refresh_all=False, num_retries=0, retry_start=0):
         csv_results = dict()
         future_results = dict()
         data_storage = Turn14DataStorage()
+        bulk_store_size = 100
+        last_attempt_start_idx = None
 
         def store_results():
             try:
                 data = dict()
                 # gather all the future results before hitting db to close the future out
-                from timeit import default_timer as timer
                 for future in futures.as_completed(future_results):
                     part_num = future_results[future]
                     data[part_num] = {**csv_results[part_num], **future.result()}
-                start = timer()
-                # for data_item in data:
-                #     if data_item['is_valid_item']:
-                #         data_storage.save(data_item)
                 data_storage.save(data)
-                print(timer()-start)
-                print("done")
             finally:
                 future_results.clear()
                 csv_results.clear()
@@ -81,28 +75,35 @@ class Turn14DataImporter:
         try:
             logger.info("Importing products from turn14")
             with self._open_session() as session:
-                product_response = self.do_request(session, "post", self.PRODUCT_URL, timeout=120, data={"stockExport": "items"})
-                if product_response.headers["content-type"] != "application/zip":
-                    raise RequestException("The data returned was not in zip format")
+                product_response = self._download_zip(lambda: self.do_request(session, "post", self.PRODUCT_URL, timeout=120, data={"stockExport": "items"}))
                 with BytesIO(product_response.content) as file_stream:
                     zip_file = zipfile.ZipFile(file_stream)
                     with zip_file.open(zip_file.filelist[0]) as inventory_csv:
                         csv_file = StringIO(inventory_csv.read().decode("utf-8", errors="ignore"))
                         with futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                            row_idx = -1
                             for data_row in csv.DictReader(csv_file):
-                                internal_part_num = data_row['InternalPartNumber']
-                                if refresh_all or not Turn14DataStorage.product_exists(internal_part_num):
-                                    csv_results[internal_part_num] = data_row
-                                    future_results[executor.submit(self._get_part_data, internal_part_num, session)] = internal_part_num
-                                    if len(future_results) == 100: #self.max_workers:
-                                        store_results()
+                                row_idx += 1
+                                if row_idx >= retry_start:
+                                    internal_part_num = data_row['InternalPartNumber']
+                                    if refresh_all or not Turn14DataStorage.product_exists(internal_part_num):
+                                        if last_attempt_start_idx is None:
+                                            last_attempt_start_idx = row_idx
+                                        csv_results[internal_part_num] = data_row
+                                        future_results[executor.submit(self._get_part_data, internal_part_num, session)] = internal_part_num
+                                        if len(future_results) == bulk_store_size:
+                                            store_results()
+                                            last_attempt_start_idx = None
                             store_results()
+                            last_attempt_start_idx = None
                             self.import_stock()
         except:
-            # todo need to keep track and come up with a better restart point
             if num_retries < self.max_retries:
+                next_retry_start = retry_start
+                if last_attempt_start_idx:
+                    next_retry_start = last_attempt_start_idx
                 logger.error("Retrying parse and store due to error", exc_info=1)
-                self.import_and_store_product_data(refresh_all=refresh_all, num_retries=num_retries + 1)
+                self.import_and_store_product_data(refresh_all=refresh_all, num_retries=num_retries + 1, retry_start=next_retry_start)
             else:
                 logger.error("The maximum retry count has been reached")
                 raise
@@ -120,9 +121,7 @@ class Turn14DataImporter:
                 parts_to_update.clear()
 
         with self._open_session() as session:
-            stock_response = self.do_request(session, "get", self.STOCK_URL, timeout=120)
-            if stock_response.headers["content-type"] != "application/zip":
-                raise RequestException("The data returned was not in zip format")
+            stock_response = self._download_zip(lambda: self.do_request(session, "get", self.STOCK_URL, timeout=120))
             with BytesIO(stock_response.content) as file_stream:
                 zip_file = zipfile.ZipFile(file_stream)
                 with zip_file.open(zip_file.filelist[0]) as inventory_csv:
@@ -133,8 +132,20 @@ class Turn14DataImporter:
                             update_stock()
                     update_stock()
 
-    def import_and_store_make_models(self):
-        pass
+    def _download_zip(self, request_fn):
+        num_retries, max_retries = 0, 10
+        while True:
+            try:
+                product_response = request_fn()
+                if product_response.headers["content-type"] != "application/zip":
+                    raise RequestException("The data returned was not in zip format")
+                return product_response
+            except:
+                if num_retries < max_retries:
+                    logger.error("Retrying download zip file", exc_info=1)
+                    num_retries += 1
+                else:
+                    raise
 
     def _login(self, session):
         logger.info("Sending request to login to turn14")

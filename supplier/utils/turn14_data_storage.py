@@ -1,10 +1,11 @@
+import logging
 import re
 from decimal import Decimal
-import logging
+
+from bulk_update.helper import bulk_update
 from django.db import transaction
 
 from supplier.models import Vendor, VendorProductLine, Category, Product, ProductCategory, ProductImage, ProductFitment, VehicleYear, VehicleMake, VehicleModel, VehicleEngine, VehicleSubModel, Vehicle
-from bulk_update.helper import bulk_update
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +98,9 @@ class Turn14DataStorage:
             if product_data_item['is_valid_item']:
                 # filter duplicates out
                 if internal_part_num not in products_to_create and internal_part_num not in products_to_update:
-                    product_args = dict()
+                    product_args = {
+                        'internal_part_num': internal_part_num
+                    }
                     for key, value in product_data_item.items():
                         if key in self.product_data_mapping:
                             data_mapper = self.product_data_mapping[key]
@@ -105,10 +108,7 @@ class Turn14DataStorage:
                     # new product
                     if internal_part_num not in product_records:
                         vendor, product_line = product_data_item["PrimaryVendor"], product_data_item["product_line"]
-                        product_args = {
-                            'internal_part_num': internal_part_num,
-                            'vendor': vendor_records[vendor]
-                        }
+                        product_args['vendor'] = vendor_records[vendor]
                         if product_line:
                             product_args['vendor_product_line'] = product_line_records[vendor + product_line]
                         products_to_create[internal_part_num] = Product(**product_args)
@@ -252,35 +252,36 @@ class Turn14DataStorage:
         engine_objects, engine_names = list(), list()
         vehicle_objects = dict()
         for internal_part_num, product_data_item in product_data.items():
-            fitment = product_data_item['fitment']
-            for fitment_item in fitment:
-                make, model, sub_model, engine = fitment_item['make'], fitment_item['model'], fitment_item['sub_model'], fitment_item['engine']
-                if make not in make_names:
-                    make_objects.append({"name": make})
-                    make_names.append(make)
+            if product_data_item['is_valid_item']:
+                fitment = product_data_item['fitment']
+                for fitment_item in fitment:
+                    make, model, sub_model, engine = fitment_item['make'], fitment_item['model'], fitment_item['sub_model'], fitment_item['engine']
+                    if make not in make_names:
+                        make_objects.append({"name": make})
+                        make_names.append(make)
 
-                if engine not in engine_names:
-                    engine_objects.append({"name": engine})
-                    engine_names.append(engine)
+                    if engine not in engine_names:
+                        engine_objects.append({"name": engine})
+                        engine_names.append(engine)
 
-                if model not in model_names:
-                    model_names.append(model)
-                model_key = make + model
-                if model_key not in model_objects:
-                    model_objects[model_key] = {"name": model, "make": make}
-                if sub_model not in sub_model_names:
-                    sub_model_names.append(sub_model)
-                sub_model_key = make + model + sub_model
-                if sub_model_key not in sub_model_objects:
-                    sub_model_objects[sub_model_key] = {"name": sub_model, "model": model, "make": make}
-                vehicle_key = "%s%s%s%s" % (make, model, sub_model, engine)
-                if vehicle_key not in vehicle_objects:
-                    vehicle_objects[vehicle_key] = {
-                        "make": make,
-                        "model": model,
-                        "sub_model": sub_model,
-                        "engine": engine
-                    }
+                    if model not in model_names:
+                        model_names.append(model)
+                    model_key = make + model
+                    if model_key not in model_objects:
+                        model_objects[model_key] = {"name": model, "make": make}
+                    if sub_model not in sub_model_names:
+                        sub_model_names.append(sub_model)
+                    sub_model_key = make + model + sub_model
+                    if sub_model_key not in sub_model_objects:
+                        sub_model_objects[sub_model_key] = {"name": sub_model, "model": model, "make": make}
+                    vehicle_key = "%s%s%s%s" % (make, model, sub_model, engine)
+                    if vehicle_key not in vehicle_objects:
+                        vehicle_objects[vehicle_key] = {
+                            "make": make,
+                            "model": model,
+                            "sub_model": sub_model,
+                            "engine": engine
+                        }
         make_retriever = DataRetriever(VehicleMake, VehicleMake.objects.filter(name__in=make_names), ("name",))
         make_records = make_retriever.bulk_get_or_create(make_objects)
 
