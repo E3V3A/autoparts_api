@@ -1,12 +1,16 @@
 import csv
+import io
 import logging
 import re
+import sys
+import time
 import urllib
 import zipfile
 from concurrent import futures
 from io import BytesIO, StringIO
 
 import requests
+from PIL import Image, ImageChops
 from django.conf import settings
 from lxml import html
 from requests import RequestException
@@ -23,7 +27,7 @@ class Turn14DataImporter:
     SEARCH_URL = "https://www.turn14.com/search/index.php"
     PART_URL = "https://www.turn14.com/ajax_scripts/vmm.php?action=product"
 
-    def __init__(self, max_workers=15, max_retries=3, max_failed_items=100):
+    def __init__(self, max_workers=20, max_retries=3, max_failed_items=100):
         self.login_data = {
             "username": settings.TURN14_USER,
             "password": settings.TURN14_PASSWORD
@@ -56,21 +60,20 @@ class Turn14DataImporter:
     def import_and_store_product_data(self, refresh_all=False, num_retries=0, retry_start=0):
         csv_results = dict()
         future_results = dict()
-        data_storage = Turn14DataStorage()
         bulk_store_size = 100
         last_attempt_start_idx = None
 
-        def store_results():
+        def get_data():
             try:
-                data = dict()
+                _data = dict()
                 # gather all the future results before hitting db to close the future out
-                for future in futures.as_completed(future_results):
-                    part_num = future_results[future]
-                    data[part_num] = {**csv_results[part_num], **future.result()}
-                data_storage.save(data)
+                for _future in futures.as_completed(future_results):
+                    _part_num = future_results[_future]
+                    _data[_part_num] = {**csv_results[_part_num], **_future.result()}
             finally:
                 future_results.clear()
                 csv_results.clear()
+            return _data
 
         try:
             logger.info("Importing products from turn14")
@@ -81,22 +84,32 @@ class Turn14DataImporter:
                     with zip_file.open(zip_file.filelist[0]) as inventory_csv:
                         csv_file = StringIO(inventory_csv.read().decode("utf-8", errors="ignore"))
                         with futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-                            row_idx = -1
-                            for data_row in csv.DictReader(csv_file):
-                                row_idx += 1
-                                if row_idx >= retry_start:
-                                    internal_part_num = data_row['InternalPartNumber']
-                                    if refresh_all or not Turn14DataStorage.product_exists(internal_part_num):
-                                        if last_attempt_start_idx is None:
-                                            last_attempt_start_idx = row_idx
-                                        csv_results[internal_part_num] = data_row
-                                        future_results[executor.submit(self._get_part_data, internal_part_num, session)] = internal_part_num
-                                        if len(future_results) == bulk_store_size:
-                                            store_results()
-                                            last_attempt_start_idx = None
-                            store_results()
-                            last_attempt_start_idx = None
-                            self.import_stock()
+                            async_data_storage = AsyncDataStorage(executor)
+                            try:
+                                row_idx = -1
+                                for data_row in csv.DictReader(csv_file):
+                                    row_idx += 1
+                                    if row_idx >= retry_start:
+                                        internal_part_num = data_row['InternalPartNumber']
+                                        if refresh_all or not Turn14DataStorage.product_exists(internal_part_num):
+                                            if last_attempt_start_idx is None:
+                                                last_attempt_start_idx = row_idx
+                                            csv_results[internal_part_num] = data_row
+                                            future_results[executor.submit(self._get_part_data, internal_part_num, session)] = internal_part_num
+                                            if len(future_results) == bulk_store_size:
+                                                data = get_data()
+                                                async_storage_error = async_data_storage.get_error()
+                                                if async_storage_error:
+                                                    raise async_storage_error[0].with_traceback(async_storage_error[1], async_storage_error[2])
+                                                async_data_storage.add_to_queue(data)
+                                                last_attempt_start_idx = None
+                                async_data_storage.add_to_queue(get_data())
+                                async_data_storage.end_processing()
+                                last_attempt_start_idx = None
+                                self.import_stock()
+                            except:
+                                async_data_storage.force_stop()
+                                raise
         except:
             if num_retries < self.max_retries:
                 next_retry_start = retry_start
@@ -173,21 +186,21 @@ class Turn14DataImporter:
         return part_data
 
     def _parse_images(self, part_detail_html, primary_img_thumb):
-        images = list()
+        images = dict()
         img_thumbs = part_detail_html.cssselect("img[data-mediumimage]")
         for img_thumb in img_thumbs:
             attributes = img_thumb.attrib
             thumb_img = attributes["src"] if "src" in attributes else ""
-            img_group = {
-                "thumb_img": thumb_img,
-                "med_img": attributes["data-mediumimage"] if "data-mediumimage" in attributes else "",
-                "large_img": attributes["data-largeimage"] if "data-largeimage" in attributes else "",
-                "is_primary": False
-            }
-            if primary_img_thumb and primary_img_thumb == thumb_img:
-                img_group["is_primary"] = True
-            images.append(img_group)
-        return images
+            if thumb_img:
+                is_primary = primary_img_thumb and primary_img_thumb == thumb_img
+                if thumb_img not in images or is_primary:
+                    images[thumb_img] = {
+                        "thumb_img": thumb_img,
+                        "med_img": attributes["data-mediumimage"] if "data-mediumimage" in attributes else "",
+                        "large_img": attributes["data-largeimage"] if "data-largeimage" in attributes else "",
+                        "is_primary": is_primary
+                    }
+        return list(images.values())
 
     def _parse_item_data_from_search(self, part_search_html):
         item_search = part_search_html.xpath('//div[@data-itemcode]')
@@ -432,3 +445,51 @@ class Turn14DataImporter:
         for key, fitments in consolidated_fitment.items():
             optimized_fitments += fitments
         return optimized_fitments
+
+
+class AsyncDataStorage(object):
+    def __init__(self, thread_executor):
+        self.data_queue = list()
+        self.processing = True
+        self.data_storage = Turn14DataStorage()
+        self.thread_executor = thread_executor
+        self.thread_future = self.thread_executor.submit(self.process_data_queue)
+        self.exc_info = None
+
+    def process_data_queue(self):
+        while self.processing or len(self.data_queue):
+            if len(self.data_queue):
+                try:
+                    logger.info("Storing data")
+                    self.data_storage.save(self.data_queue[0])
+                    logger.info("Storing data complete")
+                except:
+                    logger.error("An error was thrown from the data storage worker thread", exc_info=1)
+                    self.force_stop()
+                    self.exc_info = sys.exc_info()
+                finally:
+                    self.data_queue.pop(0)
+            time.sleep(.25)
+
+    def add_to_queue(self, data):
+        self.data_queue.append(data)
+
+    def end_processing(self):
+        self.processing = False
+
+    def force_stop(self):
+        self.end_processing()
+        self.data_queue.clear()
+
+    def get_error(self):
+        if self.exc_info:
+            return self.exc_info
+        return None
+
+
+class AsyncErrorHandler(object):
+    def __init__(self):
+        pass
+
+    def send_error(self, error):
+        raise error

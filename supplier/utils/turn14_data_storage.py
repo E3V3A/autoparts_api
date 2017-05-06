@@ -358,6 +358,7 @@ class DataRetriever(object):
     off a query set and will create any missing records.  
     It uses a key for record lookup to increase performance dramatically
     """
+
     def __init__(self, model_cls, query_set, key_parts):
         self.model_cls = model_cls
         self.query_set = query_set
