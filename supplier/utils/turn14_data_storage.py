@@ -193,10 +193,8 @@ class Turn14DataStorage:
         product_images_to_create = list()
         for product_record in product_records:
             images = product_data[product_record.internal_part_num]['images']
-            for image_stack in images:
-                img_url = image_stack['large_img'] if image_stack['large_img'] else image_stack['med_img']
-                if img_url:
-                    product_images_to_create.append(ProductImage(product=product_record, is_primary=image_stack['is_primary'], remote_image_file=img_url))
+            for image_cfg in images:
+                product_images_to_create.append(ProductImage(product=product_record, is_primary=image_cfg['is_primary'], remote_image_file=image_cfg["url"], is_generic=image_cfg["is_generic"]))
         if product_images_to_create:
             ProductImage.objects.bulk_create(product_images_to_create)
 

@@ -98,6 +98,10 @@ class ProductImage(Base):
     remote_image_file = models.CharField(max_length=150, db_index=True, null=False)
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="images")
     is_primary = models.BooleanField(default=False, null=False, db_index=True)
+    is_generic = models.BooleanField(default=False, null=False, db_index=True)
+
+    class Meta:
+        ordering = ('-is_primary', 'is_generic', '-pk')
 
     """
     below for handling duplicates

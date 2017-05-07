@@ -10,12 +10,13 @@ from concurrent import futures
 from io import BytesIO, StringIO
 
 import requests
-from PIL import Image, ImageChops
+from PIL import Image
 from django.conf import settings
 from lxml import html
 from requests import RequestException
 from requests.adapters import HTTPAdapter
 
+from supplier.utils.image_compare import ImageCompare
 from .turn14_data_storage import Turn14DataStorage
 
 logger = logging.getLogger(__name__)
@@ -26,6 +27,7 @@ class Turn14DataImporter:
     STOCK_URL = "https://www.turn14.com/export.php?action=inventory_feed"
     SEARCH_URL = "https://www.turn14.com/search/index.php"
     PART_URL = "https://www.turn14.com/ajax_scripts/vmm.php?action=product"
+    XPATH_TEXT = "translate(text(),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz')"
 
     def __init__(self, max_workers=20, max_retries=3, max_failed_items=100):
         self.login_data = {
@@ -48,20 +50,21 @@ class Turn14DataImporter:
 
     @staticmethod
     def do_request(request_obj, http_fn, url, **kwargs):
-        logger.info("Sending {0} request to {1}".format(http_fn, url))
         if "timeout" not in kwargs:
             kwargs["timeout"] = 120
         response_or_future = getattr(request_obj, http_fn)(url, **kwargs)
         if hasattr(response_or_future, "raise_for_status"):
             response_or_future.raise_for_status()
-        logger.info("{0} request to {1} completed".format(http_fn, url))
         return response_or_future
 
-    def import_and_store_product_data(self, refresh_all=False, num_retries=0, retry_start=0):
+    def import_and_store_product_data(self, update_all=False, num_retries=0, retry_start=0):
         csv_results = dict()
         future_results = dict()
         bulk_store_size = 100
         last_attempt_start_idx = None
+        async_data_storage = None
+        async_storage_error = None
+        import_error = False
 
         def get_data():
             try:
@@ -91,19 +94,24 @@ class Turn14DataImporter:
                                     row_idx += 1
                                     if row_idx >= retry_start:
                                         internal_part_num = data_row['InternalPartNumber']
-                                        if refresh_all or not Turn14DataStorage.product_exists(internal_part_num):
+                                        product_exists = Turn14DataStorage.product_exists(internal_part_num)
+                                        if update_all or not product_exists:
                                             if last_attempt_start_idx is None:
                                                 last_attempt_start_idx = row_idx
                                             csv_results[internal_part_num] = data_row
-                                            future_results[executor.submit(self._get_part_data, internal_part_num, session)] = internal_part_num
+                                            future_results[executor.submit(self._get_part_data, internal_part_num, session, product_exists)] = internal_part_num
                                             if len(future_results) == bulk_store_size:
-                                                data = get_data()
+                                                try:
+                                                    data = get_data()
+                                                except:
+                                                    import_error = True
+                                                    raise
                                                 async_storage_error = async_data_storage.get_error()
                                                 if async_storage_error:
                                                     raise async_storage_error[0].with_traceback(async_storage_error[1], async_storage_error[2])
-                                                async_data_storage.add_to_queue(data)
+                                                async_data_storage.add_to_queue(data, last_attempt_start_idx)
                                                 last_attempt_start_idx = None
-                                async_data_storage.add_to_queue(get_data())
+                                async_data_storage.add_to_queue(get_data(), last_attempt_start_idx)
                                 async_data_storage.end_processing()
                                 last_attempt_start_idx = None
                                 self.import_stock()
@@ -113,10 +121,22 @@ class Turn14DataImporter:
         except:
             if num_retries < self.max_retries:
                 next_retry_start = retry_start
-                if last_attempt_start_idx:
-                    next_retry_start = last_attempt_start_idx
+                import_start_idx = None
+                data_start_idx = None
+                if import_error:
+                    import_start_idx = last_attempt_start_idx
+                if async_storage_error:
+                    data_start_idx = async_data_storage.get_last_failed_start_idx()
+                if import_start_idx:
+                    next_retry_start = import_start_idx
+                if data_start_idx:
+                    if import_start_idx:
+                        next_retry_start = data_start_idx if data_start_idx < import_start_idx else import_start_idx
+                    else:
+                        next_retry_start = data_start_idx
+
                 logger.error("Retrying parse and store due to error", exc_info=1)
-                self.import_and_store_product_data(refresh_all=refresh_all, num_retries=num_retries + 1, retry_start=next_retry_start)
+                self.import_and_store_product_data(update_all=update_all, num_retries=num_retries + 1, retry_start=next_retry_start)
             else:
                 logger.error("The maximum retry count has been reached")
                 raise
@@ -172,35 +192,87 @@ class Turn14DataImporter:
         self._login(session)
         return session
 
-    def _get_part_data(self, part_num, session):
+    def _get_part_data(self, part_num, session, update_only=False):
         part_search_url = "{0}?vmmPart={1}".format(self.SEARCH_URL, part_num)
         logger.info("Getting part data for part_num {0} @ {1}".format(part_num, part_search_url))
         part_search_response = self.do_request(session, "get", part_search_url)
         part_search_html = html.fromstring(part_search_response.content.decode("utf-8", errors="ignore"))
         part_search_data = self._parse_item_data_from_search(part_search_html)
         if part_search_data['is_valid_item']:
-            part_data = {**part_search_data, **self._parse_item_data_from_detail(part_search_data['item_code'], part_search_data['primary_img_thumb'], session)}
+            part_data = {**part_search_data, **self._parse_item_data_from_detail(part_search_data['item_code'], part_search_data['primary_img_thumb'], session, update_only)}
         else:
             part_data = part_search_data
             logger.info("Skipping part num {0} because it is a group buy".format(part_num))
         return part_data
 
-    def _parse_images(self, part_detail_html, primary_img_thumb):
-        images = dict()
+    def _parse_images(self, part_detail_html, primary_img_thumb, session):
+        image_content_lookup = dict()
+        images_to_compare = dict()
+        images_to_keep = list()
+
+        def get_content(_url, _thumb_url):
+            _image_response = self.do_request(session, "get", _thumb_url)
+            _binary_content = io.BytesIO(_image_response.content)
+            _image_content = Image.open(_binary_content)
+            image_content_lookup[_url] = {
+                'binary_content': _binary_content,
+                'image_content': _image_content
+            }
+
         img_thumbs = part_detail_html.cssselect("img[data-mediumimage]")
-        for img_thumb in img_thumbs:
-            attributes = img_thumb.attrib
-            thumb_img = attributes["src"] if "src" in attributes else ""
-            if thumb_img:
-                is_primary = primary_img_thumb and primary_img_thumb == thumb_img
-                if thumb_img not in images or is_primary:
-                    images[thumb_img] = {
-                        "thumb_img": thumb_img,
-                        "med_img": attributes["data-mediumimage"] if "data-mediumimage" in attributes else "",
-                        "large_img": attributes["data-largeimage"] if "data-largeimage" in attributes else "",
-                        "is_primary": is_primary
+        primary_set = False
+        try:
+            for img_thumb in img_thumbs:
+                attributes = img_thumb.attrib
+                img_url = attributes["data-largeimage"] if "data-largeimage" in attributes else ""
+                thumb_img_url = attributes["src"] if "src" in attributes else ""
+                if img_url and thumb_img_url:
+                    is_primary = False
+                    if not primary_set:
+                        if primary_img_thumb:
+                            is_primary = primary_img_thumb == thumb_img_url
+                        else:
+                            is_primary = True
+                        primary_set = is_primary
+
+                    if is_primary or thumb_img_url not in images_to_compare:
+                        try:
+                            get_content(img_url, thumb_img_url)
+                        # If an image can't be read, don't pull it in
+                        except:
+                            logger.warning("Could not read image {0}, skipping".format(img_url))
+                            break
+                    generic_els = img_thumb.xpath("./preceding-sibling::span[contains(" + self.XPATH_TEXT + ",'generic')]")
+                    is_generic = len(generic_els) > 0
+                    img_cfg = {
+                        "url": img_url,
+                        "is_primary": is_primary,
+                        "is_generic": is_generic
                     }
-        return list(images.values())
+                    if is_primary:
+                        images_to_keep.append(img_cfg)
+                    elif thumb_img_url not in images_to_compare:
+                        images_to_compare[img_url] = img_cfg
+
+            for image_1_url, image_1_data in images_to_compare.items():
+                image_exists = False
+                for image_2_data in images_to_keep:
+                    if ImageCompare.images_are_dupes(image_content_lookup[image_1_data["url"]]["image_content"], image_content_lookup[image_2_data["url"]]["image_content"]):
+                        image_exists = True
+                        break
+                if not image_exists:
+                    # Keep generic images at the end
+                    if image_1_data["is_generic"]:
+                        images_to_keep.append(image_1_data)
+                    else:
+                        # If not generic, insert after the primary image which will be the first
+                        images_to_keep.insert(1, image_1_data)
+        finally:
+            for image_data in image_content_lookup.values():
+                image_data['binary_content'].close()
+                image_data['image_content'].close()
+
+        return images_to_keep
 
     def _parse_item_data_from_search(self, part_search_html):
         item_search = part_search_html.xpath('//div[@data-itemcode]')
@@ -209,14 +281,13 @@ class Turn14DataImporter:
             'is_valid_item': False
         }
         if item_search:
-            xpath_text = "translate(text(),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz')"
             item_html = item_search[0]
             item_code = item_html.attrib['data-itemcode']
             # Skip group buys
             if item_code.isnumeric() and not 'data-productgroup' in item_html.attrib:
                 cost_search = item_html.cssselect("*.amount")
-                name_search = item_html.xpath("//*[contains(" + xpath_text + ",'product name')]/following-sibling::text()")
-                carb_legal_search = item_html.xpath("//*[contains(" + xpath_text + ",'not carb legal')]")
+                name_search = item_html.xpath("//*[contains(" + self.XPATH_TEXT + ",'product name')]/following-sibling::text()")
+                carb_legal_search = item_html.xpath("//*[contains(" + self.XPATH_TEXT + ",'not carb legal')]")
                 cost = None
                 name = ""
                 is_carb_legal = False if carb_legal_search else True
@@ -245,10 +316,9 @@ class Turn14DataImporter:
                 part_data['product_line'] = product_line
         return part_data
 
-    def _parse_item_data_from_detail(self, item_code, primary_img_thumb, session):
+    def _parse_item_data_from_detail(self, item_code, primary_img_thumb, session, update_only):
         part_detail_data = dict()
         part_url = "{0}&itemCode={1}".format(self.PART_URL, item_code)
-        logger.info("Getting part details for item_code {0} @ {1}".format(item_code, part_url))
         part_detail_response = self.do_request(session, "get", part_url)
         part_detail_html = html.fromstring(part_detail_response.content.decode("utf-8", errors="ignore"))
         overview_search = part_detail_html.cssselect("p.prod-overview")
@@ -261,7 +331,10 @@ class Turn14DataImporter:
         part_detail_data['sub_category'] = fitment_data['sub_category']
         part_detail_data['fitment'] = fitment_data['fitment']
 
-        part_detail_data['images'] = self._parse_images(part_detail_html, primary_img_thumb)
+        if update_only:
+            part_detail_data['images'] = []
+        else:
+            part_detail_data['images'] = self._parse_images(part_detail_html, primary_img_thumb, session)
         part_detail_data['long_description'] = overview
         return part_detail_data
 
@@ -455,15 +528,20 @@ class AsyncDataStorage(object):
         self.thread_executor = thread_executor
         self.thread_future = self.thread_executor.submit(self.process_data_queue)
         self.exc_info = None
+        self.last_failed_start_idx = None
 
     def process_data_queue(self):
         while self.processing or len(self.data_queue):
             if len(self.data_queue):
                 try:
-                    logger.info("Storing data")
-                    self.data_storage.save(self.data_queue[0])
-                    logger.info("Storing data complete")
+                    data_to_process = self.data_queue[0]
+                    start_idx = data_to_process['start_idx']
+                    data_to_store = data_to_process['data']
+                    logger.info("Storing data at starting index of {0}".format(str(start_idx)))
+                    self.data_storage.save(data_to_store)
+                    logger.info("Storing data complete for starting index of {0}".format(str(start_idx)))
                 except:
+                    self.last_failed_start_idx = start_idx
                     logger.error("An error was thrown from the data storage worker thread", exc_info=1)
                     self.force_stop()
                     self.exc_info = sys.exc_info()
@@ -471,8 +549,11 @@ class AsyncDataStorage(object):
                     self.data_queue.pop(0)
             time.sleep(.25)
 
-    def add_to_queue(self, data):
-        self.data_queue.append(data)
+    def add_to_queue(self, data, start_idx):
+        self.data_queue.append({
+            'start_idx': start_idx,
+            'data': data
+        })
 
     def end_processing(self):
         self.processing = False
@@ -484,7 +565,10 @@ class AsyncDataStorage(object):
     def get_error(self):
         if self.exc_info:
             return self.exc_info
-        return None
+        return
+
+    def get_last_failed_start_idx(self):
+        return self.last_failed_start_idx
 
 
 class AsyncErrorHandler(object):

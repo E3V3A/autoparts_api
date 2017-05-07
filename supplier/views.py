@@ -107,8 +107,8 @@ class VendorViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 def import_products(request):
-    refresh_all = request.GET.get("refresh_all", False)
-    Turn14DataImporter().import_and_store_product_data(refresh_all=refresh_all)
+    update_all = request.GET.get("update_all", False)
+    Turn14DataImporter().import_and_store_product_data(update_all=update_all)
     return HttpResponse("Doing work!")
 
 
