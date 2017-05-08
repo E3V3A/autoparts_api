@@ -6,7 +6,7 @@ from rest_framework import viewsets
 from rest_framework.filters import OrderingFilter
 
 from supplier.filters import DefaultPagination, ProductListFilter, VendorListFilters, CategoryListFilters
-from supplier.models import Product, Category, Vendor
+from supplier.models import Category, Vendor
 from supplier.serializers import ProductSerializer, CategorySerializer, VendorSerializer
 from supplier.utils.turn14_data_importer import Turn14DataImporter
 
@@ -107,8 +107,8 @@ class VendorViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 def import_products(request):
-    refresh_all = request.GET.get("refresh_all", False)
-    Turn14DataImporter().import_and_store_product_data(refresh_all=refresh_all)
+    update_all = request.GET.get("update_all", False)
+    Turn14DataImporter().import_and_store_product_data(update_all=update_all)
     return HttpResponse("Doing work!")
 
 

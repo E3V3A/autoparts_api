@@ -12,7 +12,7 @@ class Base(models.Model):
 
 
 class Vendor(Base):
-    name = models.CharField(max_length=50, unique=True, db_index=True)
+    name = models.CharField(max_length=100, unique=True, db_index=True)
 
 
 class VendorProductLine(Base):
@@ -24,7 +24,7 @@ class VendorProductLine(Base):
 
 
 class Category(Base):
-    name = models.CharField(max_length=50, db_index=True)
+    name = models.CharField(max_length=100, db_index=True)
     parent_category = models.ForeignKey('self', on_delete=models.CASCADE, null=True, related_name='parent')
 
     class Meta:
@@ -98,6 +98,10 @@ class ProductImage(Base):
     remote_image_file = models.CharField(max_length=150, db_index=True, null=False)
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="images")
     is_primary = models.BooleanField(default=False, null=False, db_index=True)
+    is_generic = models.BooleanField(default=False, null=False, db_index=True)
+
+    class Meta:
+        ordering = ('-is_primary', 'is_generic', '-pk')
 
     """
     below for handling duplicates
@@ -109,11 +113,11 @@ class ProductImage(Base):
 
 
 class VehicleMake(Base):
-    name = models.CharField(max_length=50, db_index=True, unique=True)
+    name = models.CharField(max_length=100, db_index=True, unique=True)
 
 
 class VehicleModel(Base):
-    name = models.CharField(max_length=50, db_index=True)
+    name = models.CharField(max_length=100, db_index=True)
     make = models.ForeignKey(VehicleMake, on_delete=models.CASCADE)
 
     class Meta:
@@ -121,7 +125,7 @@ class VehicleModel(Base):
 
 
 class VehicleSubModel(Base):
-    name = models.CharField(max_length=50, db_index=True)
+    name = models.CharField(max_length=100, db_index=True)
     model = models.ForeignKey(VehicleModel, on_delete=models.CASCADE)
 
     class Meta:
@@ -129,7 +133,7 @@ class VehicleSubModel(Base):
 
 
 class VehicleEngine(Base):
-    name = models.CharField(max_length=50, db_index=True, unique=True)
+    name = models.CharField(max_length=100, db_index=True, unique=True)
 
 
 class VehicleSubModelEngine(Base):
