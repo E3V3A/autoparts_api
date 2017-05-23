@@ -1,5 +1,7 @@
 import logging
 
+from django.db.models import F, When, Case, Value
+from django.db.models.functions import Coalesce
 from django.http import HttpResponse
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import viewsets
@@ -70,7 +72,7 @@ class ProductViewSet(FieldLimiterMixin, viewsets.ReadOnlyModelViewSet):
     pagination_class = DefaultPagination
     filter_backends = (DjangoFilterBackend, OrderingFilter)
     filter_class = ProductListFilter
-    ordering_fields = ('vendor_part_num', 'description', 'retail_price', 'jobber_price', 'min_price', 'core_charge', 'can_drop_ship', 'drop_ship_fee', 'vendor', 'category', 'sub_category',)
+    ordering_fields = ('vendor_part_num', 'description', 'retail_price', 'jobber_price', 'min_price', 'core_charge', 'can_drop_ship', 'drop_ship_fee', 'vendor', 'category', 'sub_category', 'profit',)
     ordering = ('vendor_part_num',)
     select_related_map = (
         (("vendor",), ("vendor",)),
@@ -82,6 +84,20 @@ class ProductViewSet(FieldLimiterMixin, viewsets.ReadOnlyModelViewSet):
         (("images",), ("images",)),
         ((fit_obj + "make", fit_obj + "model", fit_obj + "sub_model", fit_obj + "engine",), ("fitment",))
     )
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        return queryset.annotate(
+            profit=Case(
+                When(cost__isnull=False, then=Case(
+                    When(cost__lt=Coalesce("min_price", "cost"), then=F("min_price") - F("cost") + Coalesce("core_charge", 0)),
+                    When(cost__lt=Coalesce("jobber_price", "cost"), then=F("jobber_price") - F("cost") + Coalesce("core_charge", 0)),
+                    When(cost__lt=Coalesce("retail_price", "cost"), then=F("retail_price") - F("cost") + Coalesce("core_charge", 0)),
+                    default=Value(0)
+                )),
+                default=Value(0)
+            )
+        )
 
 
 class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
@@ -114,4 +130,4 @@ def import_products(request):
 
 def import_stock(request):
     Turn14DataImporter().import_stock()
-    return HttpResponse("Doing work!");
+    return HttpResponse("Doing work!")

@@ -10,3 +10,5 @@ requests==2.13.0
 django-cors-headers==2.0.2
 psycopg2==2.7.1
 django-debug-toolbar==1.7
+sklearn
+Pillow==4.0.0

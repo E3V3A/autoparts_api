@@ -30,6 +30,8 @@ class ProductListFilter(django_filters.rest_framework.FilterSet):
     has_images = django_filters.BooleanFilter(method="has_images_filter")
     min_stock = django_filters.NumberFilter(name="stock", lookup_expr='gte')
     max_stock = django_filters.NumberFilter(name="stock", lookup_expr='lte')
+    min_profit = django_filters.NumberFilter(name="profit", lookup_expr='gte')
+    max_profit = django_filters.NumberFilter(name="profit", lookup_expr='lte')
 
     # If no image thumb, assume no images at all for faster filtering
     def has_images_filter(self, queryset, name, value):

@@ -74,6 +74,10 @@ class ProductSerializer(serializers.ModelSerializer):
     can_drop_ship = serializers.SerializerMethodField()
     images = ProductImageSerializer(read_only=True, many=True)
     fitment = ProductFitmentSerializer(read_only=True, many=True, source="productfitment_set")
+    profit = serializers.SerializerMethodField()
+
+    def get_profit(self, product):
+        return product.profit
 
     def _get_category(self, product, is_sub_category=False):
         category = None
@@ -95,4 +99,4 @@ class ProductSerializer(serializers.ModelSerializer):
         model = Product
         fields = (
             'id', 'internal_part_num', 'vendor_part_num', 'name', 'description', 'long_description', 'cost', 'retail_price', 'jobber_price', 'min_price', 'core_charge', 'can_drop_ship', 'drop_ship_fee', 'vendor', 'vendor_product_line', 'category', 'sub_category',
-            'images', 'remote_image_thumb', 'fitment', 'is_carb_legal', 'stock')
+            'images', 'remote_image_thumb', 'fitment', 'is_carb_legal', 'stock', 'profit',)
