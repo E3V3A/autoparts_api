@@ -32,11 +32,17 @@ class ProductListFilter(django_filters.rest_framework.FilterSet):
     max_stock = django_filters.NumberFilter(name="stock", lookup_expr='lte')
     min_profit = django_filters.NumberFilter(name="profit", lookup_expr='gte')
     max_profit = django_filters.NumberFilter(name="profit", lookup_expr='lte')
+    has_min_price = django_filters.BooleanFilter(method="has_min_price_filter")
 
     # If no image thumb, assume no images at all for faster filtering
     def has_images_filter(self, queryset, name, value):
         return queryset.filter(**{
             "remote_image_thumb__isnull": not value,
+        })
+
+    def has_min_price_filter(self, queryset, name, value):
+        return queryset.filter(**{
+            "min_price__isnull": not value,
         })
 
     def can_drop_ship_filter(self, queryset, name, value):
