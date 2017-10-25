@@ -30,7 +30,7 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-ROOT_URLCONF = 'some_tech_store_api.urls'
+ROOT_URLCONF = 'autoparts_api.urls'
 
 TEMPLATES = [
     {
