@@ -1,2 +1,2 @@
-# some_tech_store_api
-The api for storing and retrieving data for various e commerce stores
+# autoparts_api
+The central api for parsing standardized aces/pies data from thousands of manufacturers. 
