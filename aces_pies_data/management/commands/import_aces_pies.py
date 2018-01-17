@@ -138,7 +138,7 @@ class Command(BaseCommand):
     def download_file(self, drive_service, file_id):
         request = drive_service.files().get_media(fileId=file_id)
         file_bytes = io.BytesIO()
-        downloader = MediaIoBaseDownload(file_bytes, request, chunksize=2048 * 1024)
+        downloader = MediaIoBaseDownload(file_bytes, request, chunksize=2048 * 2048)
         done = False
         while done is False:
             status, done = downloader.next_chunk(num_retries=10)
