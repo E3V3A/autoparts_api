@@ -7,7 +7,6 @@ db.sqlite3
 db.sqlite3-journal
 media
 *.idea
-migrations/
 lastfailed
 sql_lite_db
 sql_lite_db-journal
