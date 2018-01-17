@@ -11,6 +11,6 @@ import os
 
 from django.core.wsgi import get_wsgi_application
 
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "some_tech_store_api.settings")
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "autoparts_api.settings.prod")
 
 application = get_wsgi_application()

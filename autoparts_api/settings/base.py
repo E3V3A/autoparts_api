@@ -14,9 +14,11 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'mptt',
     'corsheaders',
+    'django_filters',
     'rest_framework',
-    'supplier'
+    'aces_pies_data'
 ]
 
 MIDDLEWARE = [
@@ -48,12 +50,12 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = 'some_tech_store_api.wsgi.application'
+WSGI_APPLICATION = 'autoparts_api.wsgi.application'
 
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql_psycopg2',
-        'NAME': 'store_api',
+        'NAME': os.environ.get("db_name"),
         'USER': os.environ.get("db_user"),
         'PASSWORD': os.environ.get("db_password"),
         'HOST': os.environ.get("db_host"),
@@ -129,10 +131,13 @@ STATIC_URL = '/static/'
 MEDIA_URL = '/media/'
 
 REST_FRAMEWORK = {
-    'PAGE_SIZE': 25
+    'PAGE_SIZE': 25,
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
 }
 
 CORS_ORIGIN_ALLOW_ALL = True
 CORS_ALLOW_METHODS = (
     'GET',
 )
+GOOGLE_PRIVATE_KEY_PATH = os.environ.get("GOOGLE_PRIVATE_KEY_PATH")
+DATA_EMAIL = os.environ.get("DATA_EMAIL")
