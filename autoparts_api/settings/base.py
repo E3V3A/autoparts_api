@@ -6,7 +6,7 @@ import os
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEBUG = False
-
+ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "").split()
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
