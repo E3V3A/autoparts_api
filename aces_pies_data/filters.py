@@ -88,8 +88,13 @@ class ProductListFilter(django_filters.rest_framework.FilterSet):
     def years_filter(self, queryset, name, value):
         id_query_set = Product.objects
         all_q_construct = None
-        for year in value:
-            q_construct = Q(fitment__start_year__gte=year, fitment__end_year__lte=year)
+        years = value
+        if len(years) == 1:
+            year_range = years[0].split("-")
+            if len(year_range) > 1:
+                years = range(int(year_range[0]), int(year_range[1]) + 1)
+        for year in years:
+            q_construct = Q(fitment__start_year__gte=year, fitment__end_year__lte=int(year))
             if all_q_construct is None:
                 all_q_construct = q_construct
             else:
