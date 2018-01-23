@@ -1,7 +1,6 @@
 import logging
 
 import django_filters
-from django.db.models import Q
 
 from .models import Product, Brand, Category
 
@@ -18,44 +17,6 @@ def get_numeric_filter_list(raw_filter_list):
     return filter_list
 
 
-def parse_in_filter_string(filter_string):
-    strings = list()
-    numbers = list()
-
-    def is_number(_value):
-        try:
-            int(_value)
-            return True
-        except ValueError:
-            return False
-
-    for value in filter_string:
-        if is_number(value):
-            numbers.append(value)
-        else:
-            strings.append(value)
-    return {
-        "numbers": numbers,
-        "strings": strings
-    }
-
-
-def get_ids_for_in_filter(filter_string, queryset, string_field, number_field):
-    filter_vals = parse_in_filter_string(filter_string)
-    strings = filter_vals['strings']
-    numbers = filter_vals['numbers']
-
-    id_queryset_set = queryset
-    if strings and numbers:
-        id_queryset_set = id_queryset_set.filter(Q(**{string_field + "__in": strings}) | Q(**{number_field + "__in": numbers}))
-    elif strings:
-        id_queryset_set = id_queryset_set.filter(**{string_field + "__in": strings})
-    elif numbers:
-        id_queryset_set = id_queryset_set.filter(**{number_field + "__in": numbers})
-
-    return id_queryset_set.values_list('id', flat=True).distinct()
-
-
 class ProductListFilter(django_filters.rest_framework.FilterSet):
     brand_id = django_filters.BaseInFilter(method="brand_filter")
     category_id = django_filters.BaseInFilter(method="category_filter")
@@ -63,51 +24,48 @@ class ProductListFilter(django_filters.rest_framework.FilterSet):
     min_map = django_filters.NumberFilter(name="map_price", lookup_expr='gte')
     max_map = django_filters.NumberFilter(name="map_price", lookup_expr='lte')
     is_universal_fitment = django_filters.BooleanFilter(method="is_universal_fitment_filter", label="Universal Fitment")
-    fits_make = django_filters.BaseInFilter(method="fits_make_filter", label="Fits Make(s)")
-    fits_model = django_filters.BaseInFilter(method="fits_model_filter", label="Fits Model(s)")
-    years = django_filters.BaseInFilter(method="years_filter", label="Fits Years")
+    fitment = django_filters.CharFilter(method="fitment_filter", label="Fitment, example: 2005 Chevrolet Corvette.  Multi year, 2008-2013 Chevrolet Corvette")
+
+    def fitment_filter(self, queryset, name, val):
+        """
+        Below filters use rawsql because built in django exists filter is quite slow as it adds unnecessary group bys
+        The performance on the filter goes from 100+ seconds to under 1 second
+        Culprit was entire SQL turns into a subquery with odd group bys
+        """
+        fitment_query = val.split()
+        year, make, model = fitment_query
+        year_range = year.split("-")
+        if len(year_range) > 1:
+            years = range(int(year_range[0]), int(year_range[1]) + 1)
+        else:
+            years = [int(year)]
+        years_conditions = list()
+        for year in years:
+            years_conditions.append(f"({year} BETWEEN aces_pies_data_productfitment.start_year and aces_pies_data_productfitment.end_year)")
+        years_condition_sql = " OR ".join(years_conditions)
+        queryset = queryset.extra(where=[f"""
+            EXISTS (
+                SELECT 1 FROM aces_pies_data_productfitment 
+                INNER JOIN aces_pies_data_vehicle ON aces_pies_data_vehicle.id = aces_pies_data_productfitment.vehicle_id
+                INNER JOIN aces_pies_data_vehiclemake ON aces_pies_data_vehiclemake.id = aces_pies_data_vehicle.make_id
+                INNER JOIN aces_pies_data_vehiclemodel ON aces_pies_data_vehiclemodel.id = aces_pies_data_vehicle.model_id
+                WHERE aces_pies_data_productfitment.product_id = aces_pies_data_product.id
+                AND aces_pies_data_vehiclemake.name = '{make}'
+                AND aces_pies_data_vehiclemodel.name = '{model}'
+                AND ({years_condition_sql})
+            )
+        """])
+        return queryset
+
 
     def brand_filter(self, queryset, name, value):
-        ids_for_filter = get_ids_for_in_filter(value, Product.objects, "brand__name", "brand_id")
         return queryset.filter(**{
-            "id__in": ids_for_filter
-        })
-
-    def fits_make_filter(self, queryset, name, value):
-        ids_for_filter = get_ids_for_in_filter(value, Product.objects, "fitment__vehicle__make__name", "fitment__vehicle__make__id")
-        return queryset.filter(**{
-            "id__in": ids_for_filter
-        })
-
-    def fits_model_filter(self, queryset, name, value):
-        ids_for_filter = get_ids_for_in_filter(value, Product.objects, "fitment__vehicle__model__name", "fitment__vehicle__model__id")
-        return queryset.filter(**{
-            "id__in": ids_for_filter
-        })
-
-    def years_filter(self, queryset, name, value):
-        id_query_set = Product.objects
-        all_q_construct = None
-        years = value
-        if len(years) == 1:
-            year_range = years[0].split("-")
-            if len(year_range) > 1:
-                years = range(int(year_range[0]), int(year_range[1]) + 1)
-        for year in years:
-            q_construct = Q(fitment__start_year__gte=year, fitment__end_year__lte=int(year))
-            if all_q_construct is None:
-                all_q_construct = q_construct
-            else:
-                all_q_construct = all_q_construct | q_construct
-        ids_for_filter = id_query_set.filter(all_q_construct).values_list('id', flat=True).distinct()
-        return queryset.filter(**{
-            "id__in": ids_for_filter
+            "brand__name__in": value
         })
 
     def category_filter(self, queryset, name, value):
-        ids_for_filter = get_ids_for_in_filter(value, Product.objects, "category__name", "category_id")
         return queryset.filter(**{
-            "id__in": ids_for_filter
+            "category__name__in": value
         })
 
     def has_map_price_filter(self, queryset, name, value):
