@@ -397,35 +397,45 @@ class AcesDataStorage(object):
         ]
         vehicle_fitment_key_parts = vehicle_key_parts + ["fitment_info_1", "fitment_info_2"]
         existing_fitment_records = existing_fitment_records.values(*(["id", "product__part_number", "start_year", "end_year"] + vehicle_fitment_key_parts))
-        existing_fitment_record_lookup = dict()
         for existing_fitment_record in existing_fitment_records:
             vehicle_fitment_key = DataRetriever.get_record_key(existing_fitment_record, vehicle_fitment_key_parts)
             vehicle_key = DataRetriever.get_record_key(existing_fitment_record, vehicle_key_parts)
             part_number = existing_fitment_record['product__part_number']
             if part_number not in existing_fitment_lookup:
                 existing_fitment_lookup[part_number] = dict()
-            existing_fitment_record_lookup[part_number] = existing_fitment_record
             existing_fitment_lookup[part_number][vehicle_fitment_key] = {
                 'product': part_number,
                 'vehicle': vehicle_key,
                 'start_year': existing_fitment_record['start_year'],
                 'end_year': existing_fitment_record['end_year'],
                 'fitment_info_1': existing_fitment_record['fitment_info_1'],
-                'fitment_info_2': existing_fitment_record['fitment_info_2']
+                'fitment_info_2': existing_fitment_record['fitment_info_2'],
+                'fitment_id': existing_fitment_record['id']
             }
-        product_fitment_to_delete = list()
         if existing_fitment_lookup:
-            for part_number in list(part_fitment_storage['storage_objects'].keys()):
-                if part_number in existing_fitment_lookup:
-                    new_part_fitment_storage = part_fitment_storage['storage_objects'][part_number]
-                    existing_part_fitment_storage = existing_fitment_lookup[part_number]
-                    if new_part_fitment_storage == existing_part_fitment_storage:
-                        del part_fitment_storage['storage_objects'][part_number]
+            self._prepare_fitment_for_update(existing_fitment_lookup, part_fitment_storage)
+        return part_fitment_storage
+
+    def _prepare_fitment_for_update(self, existing_fitment_lookup, part_fitment_storage):
+        product_fitment_to_delete = list()
+        for part_number in list(part_fitment_storage['storage_objects'].keys()):
+            if part_number in existing_fitment_lookup:
+                new_part_fitment_storage = part_fitment_storage['storage_objects'][part_number]
+                existing_part_fitment_storage = existing_fitment_lookup[part_number]
+                for existing_fitment_key, existing_fitment_data in existing_part_fitment_storage.items():
+                    fitment_id = existing_fitment_data.pop('fitment_id')
+                    if existing_fitment_key not in new_part_fitment_storage:
+                        product_fitment_to_delete.append(fitment_id)
                     else:
-                        product_fitment_to_delete.append(existing_fitment_record_lookup[part_number]['id'])
+                        new_fitment_data = new_part_fitment_storage[existing_fitment_key]
+                        if existing_fitment_data != new_fitment_data:
+                            product_fitment_to_delete.append(fitment_id)
+                        else:
+                            del part_fitment_storage['storage_objects'][part_number][existing_fitment_key]
+                            if len(part_fitment_storage['storage_objects'][part_number]) == 0:
+                                del part_fitment_storage['storage_objects'][part_number]
         if product_fitment_to_delete:
             ProductFitment.objects.filter(id__in=product_fitment_to_delete).delete()
-        return part_fitment_storage
 
     def _get_make_records(self, fitment_data):
         make_retriever = DataRetriever(VehicleMake, VehicleMake.objects.filter(name__in=fitment_data.make_storage['makes']), ('name',))
