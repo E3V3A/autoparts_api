@@ -47,7 +47,7 @@ class Command(BaseCommand):
                     logger.info(f"Downloading file {file_name} for {import_type} parsing")
                     file_bytes = self.download_file(drive_service, file_info['file']['id'])
                     with zipfile.ZipFile(file_bytes) as zip_file:
-                        file_obj = zip_file.filelist[0]
+                        file_obj = self.get_file_obj_from_zip(zip_file, import_type)
                         with zip_file.open(file_obj) as data_file:
                             if import_type == "pies":
                                 pies_file_parser = PiesFileParser(data_file, brand_short_name)
@@ -71,6 +71,19 @@ class Command(BaseCommand):
             with TrackingRecord(import_type, import_action, brand_short_name, file_name):
                 logger.info(f"Archiving file {file_name}")
                 archive_file(drive_service, file_to_archive['file']['id'], pending_folder_id, archived_folder_id)
+
+    def get_file_obj_from_zip(self, zip_file, import_type):
+        import_type_file = {
+            "pies_flat": "piesdata67.txt",
+            "aces": "n1parts.txt",
+            "pies": "pies67.xml"
+        }
+
+        for file_obj in zip_file.filelist:
+            if import_type_file[import_type] in file_obj.filename.lower():
+                return file_obj
+
+        raise ValueError(f"No file found for {import_type}")
 
     def get_files_to_process(self, drive_service):
         logging.info("Retrieving files to import")
