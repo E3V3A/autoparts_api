@@ -213,11 +213,10 @@ This still allows the ability to easily determine if a part fits a given car or 
 
 class VehicleYear(Base):
     vehicle = models.ForeignKey(Vehicle, on_delete=models.CASCADE)
-    start_year = models.PositiveIntegerField(db_index=True)
-    end_year = models.PositiveIntegerField(db_index=True)
+    year = models.PositiveIntegerField(db_index=True)
 
     class Meta:
-        unique_together = ("vehicle", "start_year", "end_year",)
+        unique_together = ("vehicle", "year",)
 
 
 class ProductFitment(Base):

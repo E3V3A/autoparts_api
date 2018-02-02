@@ -257,11 +257,13 @@ class AcesFileParser(object):
                 current_part_num = fitment_row['exppartno']
                 if part_num_to_consolidate and part_num_to_consolidate != current_part_num:
                     if len(parsed_product_fitment.part_fitment_storage['storage_objects']) == part_fitment_chunks:
+                        parsed_product_fitment._add_years_to_fitment_keys()
                         yield parsed_product_fitment
                         parsed_product_fitment = ParsedProductFitment(self.brand_record)
                 part_num_to_consolidate = current_part_num
                 parsed_product_fitment.parse_fitment_row(fitment_row)
             if len(parsed_product_fitment.part_fitment_storage['storage_objects']):
+                parsed_product_fitment._add_years_to_fitment_keys()
                 yield parsed_product_fitment
 
     def _store_file_in_db(self, sql_cursor):
@@ -431,16 +433,9 @@ class ParsedProductFitment(object):
                 'model': model_key,
                 'sub_model': sub_model_key,
                 'engine': engine_key,
-                'start_year': vehicle_year,
-                'end_year': vehicle_year
+                'years': set()
             }
-        current_start_year = self.vehicle_storage['storage_objects'][vehicle_key]['start_year']
-        current_end_year = self.vehicle_storage['storage_objects'][vehicle_key]['end_year']
-
-        if vehicle_year < current_start_year:
-            self.vehicle_storage['storage_objects'][vehicle_key]['start_year'] = vehicle_year
-        elif vehicle_year > current_end_year:
-            self.vehicle_storage['storage_objects'][vehicle_key]['end_year'] = vehicle_year
+        self.vehicle_storage['storage_objects'][vehicle_key]['years'].add(vehicle_year)
         return vehicle_key
 
     def _parse_vehicle_fitment(self, fitment_row, vehicle_key):
@@ -457,15 +452,37 @@ class ParsedProductFitment(object):
             self.part_fitment_storage['storage_objects'][part_num][vehicle_fitment_key] = {
                 'product': part_num,
                 'vehicle': vehicle_key,
-                'start_year': vehicle_year,
-                'end_year': vehicle_year,
+                'years': set(),
                 'fitment_info_1': fitment_info_1 or None,
                 'fitment_info_2': fitment_info_2 or None
             }
+        self.part_fitment_storage['storage_objects'][part_num][vehicle_fitment_key]['years'].add(vehicle_year)
 
-        current_start_year = self.part_fitment_storage['storage_objects'][part_num][vehicle_fitment_key]['start_year']
-        current_end_year = self.part_fitment_storage['storage_objects'][part_num][vehicle_fitment_key]['end_year']
-        if vehicle_year < current_start_year:
-            self.part_fitment_storage['storage_objects'][part_num][vehicle_fitment_key]['start_year'] = vehicle_year
-        elif vehicle_year > current_end_year:
-            self.part_fitment_storage['storage_objects'][part_num][vehicle_fitment_key]['end_year'] = vehicle_year
+    def _add_years_to_fitment_keys(self):
+        part_storage = self.part_fitment_storage['storage_objects']
+        test_fitment = dict()
+        def add_new_fitment_key(_fitment, _fitment_data, _orig_key, _start_year, _end_year):
+            _fitment_data['start_year'] = _start_year
+            _fitment_data['end_year'] = _end_year
+            _fitment[str(_start_year) + str(_end_year) + _orig_key] = _fitment_data
+            test_fitment[str(_start_year) + str(_end_year) + _orig_key] = _fitment_data
+            if _orig_key in _fitment:
+                del _fitment[_orig_key]
+
+        for part_number, fitment in part_storage.items():
+            for vehicle_key in list(fitment.keys()):
+                fitment_data = fitment[vehicle_key]
+                years = sorted(fitment_data.pop('years'))
+                start_year, end_year, prev_year = None, None, None
+                num_years = len(years)
+                for idx, year in enumerate(years):
+                    if prev_year and year - 1 > prev_year:
+                        end_year = prev_year
+                        add_new_fitment_key(fitment, fitment_data.copy(), vehicle_key, start_year, end_year)
+                        start_year, end_year = None, None
+                    if start_year is None:
+                        start_year = year
+                    if not end_year and idx + 1 == num_years:
+                        end_year = year
+                        add_new_fitment_key(fitment, fitment_data.copy(), vehicle_key, start_year, end_year)
+                    prev_year = year

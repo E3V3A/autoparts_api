@@ -387,6 +387,7 @@ class AcesDataStorage(object):
 
         """
         existing_fitment_lookup = dict()
+        product_fitment_to_delete = list()
         part_fitment_storage = fitment_data.part_fitment_storage
         existing_product_lookup = Product.objects.filter(brand=fitment_data.brand_record, part_number__in=part_fitment_storage['storage_objects'].keys()).values_list("part_number", flat=True)
         part_fitment_storage['storage_objects'] = {key: value for key, value in part_fitment_storage['storage_objects'].items() if key in existing_product_lookup}
@@ -395,8 +396,8 @@ class AcesDataStorage(object):
         vehicle_key_parts = [
             "vehicle__make__name", "vehicle__model__name", "vehicle__sub_model__name", "vehicle__engine__configuration", "vehicle__engine__liters", "vehicle__engine__fuel_type__name", "vehicle__engine__fuel_delivery__name", "vehicle__engine__engine_code", "vehicle__engine__aspiration__name"
         ]
-        vehicle_fitment_key_parts = vehicle_key_parts + ["fitment_info_1", "fitment_info_2"]
-        existing_fitment_records = existing_fitment_records.values(*(["id", "product__part_number", "start_year", "end_year"] + vehicle_fitment_key_parts))
+        vehicle_fitment_key_parts = ["start_year", "end_year"] + vehicle_key_parts + ["fitment_info_1", "fitment_info_2"]
+        existing_fitment_records = existing_fitment_records.values(*(["id", "product__part_number"] + vehicle_fitment_key_parts))
         for existing_fitment_record in existing_fitment_records:
             vehicle_fitment_key = DataRetriever.get_record_key(existing_fitment_record, vehicle_fitment_key_parts)
             vehicle_key = DataRetriever.get_record_key(existing_fitment_record, vehicle_key_parts)
@@ -412,30 +413,28 @@ class AcesDataStorage(object):
                 'fitment_info_2': existing_fitment_record['fitment_info_2'],
                 'fitment_id': existing_fitment_record['id']
             }
-        if existing_fitment_lookup:
-            self._prepare_fitment_for_update(existing_fitment_lookup, part_fitment_storage)
-        return part_fitment_storage
 
-    def _prepare_fitment_for_update(self, existing_fitment_lookup, part_fitment_storage):
-        product_fitment_to_delete = list()
-        for part_number in list(part_fitment_storage['storage_objects'].keys()):
-            if part_number in existing_fitment_lookup:
-                new_part_fitment_storage = part_fitment_storage['storage_objects'][part_number]
-                existing_part_fitment_storage = existing_fitment_lookup[part_number]
-                for existing_fitment_key, existing_fitment_data in existing_part_fitment_storage.items():
-                    fitment_id = existing_fitment_data.pop('fitment_id')
-                    if existing_fitment_key not in new_part_fitment_storage:
-                        product_fitment_to_delete.append(fitment_id)
-                    else:
-                        new_fitment_data = new_part_fitment_storage[existing_fitment_key]
-                        if existing_fitment_data != new_fitment_data:
+        if existing_fitment_lookup:
+            for part_number in list(part_fitment_storage['storage_objects'].keys()):
+                if part_number in existing_fitment_lookup:
+                    new_part_fitment_storage = part_fitment_storage['storage_objects'][part_number]
+                    existing_part_fitment_storage = existing_fitment_lookup[part_number]
+                    for existing_fitment_key, existing_fitment_data in existing_part_fitment_storage.items():
+                        fitment_id = existing_fitment_data.pop('fitment_id')
+                        if existing_fitment_key not in new_part_fitment_storage:
                             product_fitment_to_delete.append(fitment_id)
+                            # TODO, clean up unused vehicle data
                         else:
-                            del part_fitment_storage['storage_objects'][part_number][existing_fitment_key]
-                            if len(part_fitment_storage['storage_objects'][part_number]) == 0:
-                                del part_fitment_storage['storage_objects'][part_number]
+                            new_fitment_data = new_part_fitment_storage[existing_fitment_key]
+                            if existing_fitment_data != new_fitment_data:
+                                product_fitment_to_delete.append(fitment_id)
+                            else:
+                                del part_fitment_storage['storage_objects'][part_number][existing_fitment_key]
+                                if len(part_fitment_storage['storage_objects'][part_number]) == 0:
+                                    del part_fitment_storage['storage_objects'][part_number]
         if product_fitment_to_delete:
             ProductFitment.objects.filter(id__in=product_fitment_to_delete).delete()
+        return part_fitment_storage
 
     def _get_make_records(self, fitment_data):
         make_retriever = DataRetriever(VehicleMake, VehicleMake.objects.filter(name__in=fitment_data.make_storage['makes']), ('name',))
@@ -480,14 +479,13 @@ class AcesDataStorage(object):
                 vehicle_object['sub_model_id'] = sub_model_records[vehicle_object.pop('sub_model')]
             if vehicle_object['engine'] and engine_records:
                 vehicle_object['engine_id'] = engine_records[vehicle_object.pop('engine')]
-            vehicle_start_year = vehicle_object.pop('start_year')
-            vehicle_end_year = vehicle_object.pop('end_year')
-            vehicle_year_key = str(vehicle_start_year) + str(vehicle_end_year) + vehicle_key
-            vehicle_year_storage[vehicle_year_key] = {
-                'vehicle': vehicle_key,
-                'start_year': vehicle_start_year,
-                'end_year': vehicle_end_year
-            }
+            vehicle_years = vehicle_object.pop("years")
+            for vehicle_year in vehicle_years:
+                vehicle_year_key = str(vehicle_year) + vehicle_key
+                vehicle_year_storage[vehicle_year_key] = {
+                    'vehicle': vehicle_key,
+                    'year': vehicle_year
+                }
         vehicle_retriever = DataRetriever(
             Vehicle,
             Vehicle.objects.filter(model_id__in=model_records.values()).select_related("make", "model", "sub_model", "engine", "engine__fuel_delivery", "engine__fuel_type", "engine__aspiration"),
@@ -501,7 +499,7 @@ class AcesDataStorage(object):
             VehicleYear,
             VehicleYear.objects.filter(vehicle_id__in=vehicle_records.values()).select_related("vehicle", "vehicle__make", "vehicle__model", "vehicle__sub_model", "vehicle__engine", "vehicle__engine__fuel_delivery", "vehicle__engine__fuel_type", "vehicle__engine__aspiration"),
             (
-                "start_year", "end_year", "vehicle__make__name", "vehicle__model__name", "vehicle__sub_model__name", "vehicle__engine__configuration", "vehicle__engine__liters", "vehicle__engine__fuel_type__name", "vehicle__engine__fuel_delivery__name", "vehicle__engine__engine_code",
+                "year", "vehicle__make__name", "vehicle__model__name", "vehicle__sub_model__name", "vehicle__engine__configuration", "vehicle__engine__liters", "vehicle__engine__fuel_type__name", "vehicle__engine__fuel_delivery__name", "vehicle__engine__engine_code",
                 "vehicle__engine__aspiration__name")
         )
         vehicle_year_retriever.bulk_get_or_create(vehicle_year_storage)
