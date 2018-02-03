@@ -25,6 +25,7 @@ class ProductListFilter(django_filters.rest_framework.FilterSet):
     max_map = django_filters.NumberFilter(name="map_price", lookup_expr='lte')
     is_universal_fitment = django_filters.BooleanFilter(method="is_universal_fitment_filter", label="Universal Fitment")
     fitment = django_filters.CharFilter(method="fitment_filter", label="Fitment, example: 2005 Chevrolet Corvette.  Multi year, 2008-2013 Chevrolet Corvette")
+    has_images = django_filters.BooleanFilter(method="has_images_filter", label="Has images")
 
     def fitment_filter(self, queryset, name, val):
         """
@@ -65,6 +66,18 @@ class ProductListFilter(django_filters.rest_framework.FilterSet):
         """])
         return queryset
 
+    def has_images_filter(self, queryset, name, val):
+        not_exists = "" if val else "NOT"
+        queryset = queryset.extra(where=[f"""
+            {not_exists} EXISTS (
+                SELECT 1 FROM aces_pies_data_productdigitalasset pda
+                INNER JOIN aces_pies_data_digitalasset da on da.id = pda.digital_asset_id
+                INNER JOIN aces_pies_data_digitalassettype dat on da.type_id = dat.id
+                WHERE pda.product_id = aces_pies_data_product.id
+                AND dat.name = 'Product Image'
+            )
+        """])
+        return queryset
 
     def brand_filter(self, queryset, name, value):
         return queryset.filter(**{
