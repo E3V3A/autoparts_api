@@ -138,6 +138,7 @@ class ProductSerializer(serializers.HyperlinkedModelSerializer):
     digital_assets = ProductDigitalAssetSerializer(many=True, read_only=True)
     fitment_listing = serializers.HyperlinkedIdentityField(view_name='product-fitment')
     fitment_count = serializers.SerializerMethodField()
+    images = serializers.SerializerMethodField()
 
     def get_fitment_count(self, product_model):
         context = self.context
@@ -165,6 +166,19 @@ class ProductSerializer(serializers.HyperlinkedModelSerializer):
             feature_list.append(feature.name)
         return feature_list
 
+    def get_images(self, product_model):
+        digital_assets = list()
+        for product_digital_asset in product_model.digital_assets.all():
+            digital_asset = product_digital_asset.digital_asset
+            if digital_asset.type.name == 'Product Image':
+                digital_assets.append({
+                    "url": digital_asset.url,
+                    "display_sequence": product_digital_asset.display_sequence
+                })
+
+        images = [digital_asset['url'] for digital_asset in sorted(digital_assets, key=lambda k: k['display_sequence'])]
+        return images
+
     class Meta:
         model = Product
-        fields = ('id', 'part_number', 'name', 'brand', 'category', 'is_hazardous', 'is_carb_legal', 'is_discontinued', 'is_obsolete', 'map_price', 'retail_price', 'attributes', 'features', 'packages', 'digital_assets', 'fitment_count', 'fitment_listing',)
+        fields = ('id', 'part_number', 'name', 'brand', 'category', 'is_hazardous', 'is_carb_legal', 'is_discontinued', 'is_obsolete', 'map_price', 'retail_price', 'attributes', 'features', 'packages', 'digital_assets', 'fitment_count', 'fitment_listing', 'images',)
