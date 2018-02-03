@@ -131,8 +131,7 @@ STATIC_URL = '/static/'
 MEDIA_URL = '/media/'
 
 REST_FRAMEWORK = {
-    'PAGE_SIZE': 25,
-    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'DEFAULT_PAGINATION_CLASS': 'aces_pies_data.core.pagination.CustomPageNumberPagination',
 }
 
 CORS_ORIGIN_ALLOW_ALL = True
