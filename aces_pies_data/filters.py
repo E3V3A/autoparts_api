@@ -33,7 +33,10 @@ class ProductListFilter(django_filters.rest_framework.FilterSet):
         Culprit was entire SQL turns into a subquery with odd group bys
         """
         fitment_query = val.split()
-        year, make, model = fitment_query
+        year, make, model = fitment_query[0:3]
+        engine, engine_condition_sql, engine_condition_join = None, '', ''
+        if len(fitment_query) == 4:
+            engine = fitment_query[3]
         year_range = year.split("-")
         if len(year_range) > 1:
             years = range(int(year_range[0]), int(year_range[1]) + 1)
@@ -43,16 +46,21 @@ class ProductListFilter(django_filters.rest_framework.FilterSet):
         for year in years:
             years_conditions.append(f"({year} BETWEEN aces_pies_data_productfitment.start_year and aces_pies_data_productfitment.end_year)")
         years_condition_sql = " OR ".join(years_conditions)
+        if engine:
+            engine_condition_join = "INNER JOIN aces_pies_data_vehicleengine ON aces_pies_data_vehicle.engine_id = aces_pies_data_vehicleengine.id"
+            engine_condition_sql = f"AND aces_pies_data_vehicleengine.configuration = '{engine}'"
         queryset = queryset.extra(where=[f"""
             EXISTS (
                 SELECT 1 FROM aces_pies_data_productfitment 
                 INNER JOIN aces_pies_data_vehicle ON aces_pies_data_vehicle.id = aces_pies_data_productfitment.vehicle_id
                 INNER JOIN aces_pies_data_vehiclemake ON aces_pies_data_vehiclemake.id = aces_pies_data_vehicle.make_id
                 INNER JOIN aces_pies_data_vehiclemodel ON aces_pies_data_vehiclemodel.id = aces_pies_data_vehicle.model_id
+                {engine_condition_join}
                 WHERE aces_pies_data_productfitment.product_id = aces_pies_data_product.id
                 AND aces_pies_data_vehiclemake.name = '{make}'
                 AND aces_pies_data_vehiclemodel.name = '{model}'
                 AND ({years_condition_sql})
+                {engine_condition_sql}
             )
         """])
         return queryset
