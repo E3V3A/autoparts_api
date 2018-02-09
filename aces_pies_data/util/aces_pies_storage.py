@@ -70,7 +70,8 @@ class PiesDataStorage(object):
                 products_to_create.append(
                     Product(
                         part_number=product_data['part_number'], name=product_data['name'], is_hazardous=product_data['is_hazardous'], is_carb_legal=product_data['is_carb_legal'], is_discontinued=product_data['is_discontinued'],
-                        is_obsolete=product_data['is_obsolete'], map_price=product_data['map_price'], retail_price=product_data['retail_price'], brand=brand_record, category=part_categories_lookup.get(product_data['part_number'], None)
+                        is_obsolete=product_data['is_obsolete'], map_price=product_data['map_price'], retail_price=product_data['retail_price'], brand=brand_record, category=part_categories_lookup.get(product_data['part_number'], None),
+                        is_superseded=product_data['is_superseded'], superseded_by=product_data['superseded_by']
                     )
                 )
             else:
@@ -97,8 +98,9 @@ class PiesDataStorage(object):
 
     def _prepare_for_update(self, product_data, product_record, part_categories_lookup):
         product_change_manager = ProductChangeManager(product_record)
-        product_change_manager.prepare_for_update(product_data, part_categories_lookup)
+        do_update = product_change_manager.prepare_for_update(product_data, part_categories_lookup)
         product_data['product_record'] = product_record
+        return do_update
 
     def _bulk_create_features(self, product_lookup):
         features_to_create = list()

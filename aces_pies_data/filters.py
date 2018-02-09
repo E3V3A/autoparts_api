@@ -26,6 +26,9 @@ class ProductListFilter(django_filters.rest_framework.FilterSet):
     is_universal_fitment = django_filters.BooleanFilter(method="is_universal_fitment_filter", label="Universal Fitment")
     fitment = django_filters.CharFilter(method="fitment_filter", label="Fitment, example: 2005 Chevrolet Corvette.  Multi year, 2008-2013 Chevrolet Corvette")
     has_images = django_filters.BooleanFilter(method="has_images_filter", label="Has images")
+    is_superseded = django_filters.BooleanFilter(method="is_superseded_filter", label="Superseded")
+    is_discontinued = django_filters.BooleanFilter(method="is_discontinued_filter", label="Discontinued")
+    is_obsolete = django_filters.BooleanFilter(method="is_obsolete_filter", label="Obsolete")
 
     def fitment_filter(self, queryset, name, val):
         """
@@ -103,6 +106,21 @@ class ProductListFilter(django_filters.rest_framework.FilterSet):
             return queryset.filter(**{
                 "fitment_count__gte": 1,
             })
+
+    def is_superseded_filter(self, queryset, name, value):
+        return queryset.filter(**{
+            "is_superseded": value,
+        })
+
+    def is_discontinued_filter(self, queryset, name, value):
+        return queryset.filter(**{
+            "is_discontinued": value,
+        })
+
+    def is_obsolete_filter(self, queryset, name, value):
+        return queryset.filter(**{
+            "is_obsolete": value,
+        })
 
     class Meta:
         model = Product

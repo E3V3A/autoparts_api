@@ -181,4 +181,4 @@ class ProductSerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = Product
-        fields = ('id', 'part_number', 'name', 'brand', 'category', 'is_hazardous', 'is_carb_legal', 'is_discontinued', 'is_obsolete', 'map_price', 'retail_price', 'attributes', 'features', 'packages', 'digital_assets', 'fitment_count', 'fitment_listing', 'images',)
+        fields = ('id', 'part_number', 'name', 'brand', 'category', 'is_hazardous', 'is_carb_legal', 'is_discontinued', 'is_obsolete', 'is_superseded', 'superseded_by', 'map_price', 'retail_price', 'attributes', 'features', 'packages', 'digital_assets', 'fitment_count', 'fitment_listing', 'images',)
