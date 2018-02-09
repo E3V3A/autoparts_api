@@ -8,6 +8,7 @@ from django.core.management import BaseCommand
 from googleapiclient.http import MediaFileUpload
 
 from aces_pies_data.management.commands import build_google_service
+from aces_pies_data.management.import_utils import with_retries
 
 logger = logging.getLogger('GoogleDriveJob')
 
@@ -19,6 +20,9 @@ class Command(BaseCommand):
     help = 'Downloads files from email body and sends to google drive'
 
     def handle(self, *args, **options):
+        with_retries(self.do_send_to_google_drive, logger)
+
+    def do_send_to_google_drive(self):
         drive_service = build_google_service('drive', 'v3', ['https://www.googleapis.com/auth/drive'])
         gmail_service = build_google_service('gmail', 'v1', ['https://mail.google.com/'])
         files_folder_result = drive_service.files().list(q="name = 'pending data'").execute()
@@ -33,8 +37,7 @@ class Command(BaseCommand):
                     try:
                         os.remove(file_name)
                     except:
-                        logger.warning(f"Failed to delete {file_name}")
-                        pass
+                        logger.exception(f"Failed to delete {file_name}")
 
 
 def archive_email(gmail_service, email_id):

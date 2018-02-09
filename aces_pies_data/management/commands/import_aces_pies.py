@@ -9,7 +9,7 @@ import sys
 
 from googleapiclient.http import MediaIoBaseDownload
 
-from aces_pies_data.management.import_utils import get_file_obj_from_zip, get_csv_lines, parse_file_name
+from aces_pies_data.management.import_utils import get_file_obj_from_zip, get_csv_lines, parse_file_name, with_retries
 from aces_pies_data.models import ImportTracking, ImportTrackingType
 from aces_pies_data.util.aces_pies_parsing import PiesFileParser, AcesFileParser
 from aces_pies_data.util.aces_pies_storage import PiesDataStorage, AcesDataStorage, PiesCategoryDataStorage
@@ -28,21 +28,7 @@ class Command(BaseCommand):
     help = 'Imports aces pies data from a google drive folder'
 
     def handle(self, *args, **options):
-        max_attempts = 10
-        num_tries = 0
-        import_complete = False
-        logger.info("Parsing aces pies data")
-        last_exception = None
-        while not import_complete and num_tries < max_attempts:
-            num_tries += 1
-            try:
-                self.do_import()
-                import_complete = True
-            except Exception as e:
-                logger.exception("There was a problem importing, trying again")
-                last_exception = e
-        if last_exception:
-            raise last_exception
+        with_retries(self.do_import, logger)
 
     def do_import(self):
         drive_service = build_google_service('drive', 'v3', ['https://www.googleapis.com/auth/drive'])

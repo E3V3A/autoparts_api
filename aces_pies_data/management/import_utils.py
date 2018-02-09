@@ -1,4 +1,4 @@
-import datetime
+import time
 import re
 
 import pytz
@@ -44,3 +44,21 @@ def parse_file_name(file_name):
         "file_date": file_date,
         "import_type": import_type
     }
+
+
+def with_retries(fn, logger, max_attempts=10):
+    num_tries = 0
+    action_complete = False
+    last_exception = None
+    while not action_complete and num_tries < max_attempts:
+        num_tries += 1
+        try:
+            fn()
+            action_complete = True
+        except Exception as e:
+            logger.exception("There was a problem performing the action, trying again")
+            if num_tries < max_attempts:
+                time.sleep(60)
+            last_exception = e
+    if last_exception:
+        raise last_exception
