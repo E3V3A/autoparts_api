@@ -30,7 +30,6 @@ class Command(BaseCommand):
                     upload_to_google_drive(drive_service, file_name, files_folder_id)
                     archive_email(gmail_service, email['email_id'])
                 finally:
-                    pass
                     try:
                         os.remove(file_name)
                     except:
