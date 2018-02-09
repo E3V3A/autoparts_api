@@ -45,6 +45,8 @@ class Product(Base):
     is_hazardous = models.BooleanField(default=False, db_index=True)
     is_carb_legal = models.BooleanField(default=True, db_index=True)
     is_discontinued = models.BooleanField(default=False, db_index=True)
+    is_superseded = models.BooleanField(default=False, db_index=True)
+    superseded_by = models.CharField(null=True, max_length=50, db_index=True)
     is_obsolete = models.BooleanField(default=False, db_index=True)
     map_price = models.DecimalField(max_digits=7, decimal_places=2, null=True, db_index=True)
     retail_price = models.DecimalField(max_digits=7, decimal_places=2, null=True, db_index=True)

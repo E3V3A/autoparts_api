@@ -120,20 +120,31 @@ class PiesFileParser(object):
 
     def _parse_xml_extended_info(self, xml_item):
         extended_info_elems = xml_item.find("autocare:ExtendedInformation", self.xml_namespaces)
-        not_for_ca, discontinued, obsolete = False, False, False
+        not_for_ca, discontinued, obsolete, superseded = False, False, False, False
+        superseded_by = None
         if extended_info_elems:
             for extended_info_elem in extended_info_elems:
                 code, value = extended_info_elem.get("EXPICode"), extended_info_elem.text
                 if code == "EMS" and value == "2":
                     not_for_ca = True
-                elif code == "LIF" and value == "8":
-                    discontinued = True
-                elif code == "LIF" and value == "9":
-                    obsolete = True
+                elif code == "LIF":
+                    if value == "7":
+                        superseded = True
+                    elif value == "8":
+                        discontinued = True
+                    elif value == "9":
+                        obsolete = True
+                elif code == "PTS":
+                    superseded_by = value
+        if superseded_by and not superseded:
+            superseded_by = None
+
         return {
             'is_carb_legal': not not_for_ca,
             'is_discontinued': discontinued,
-            'is_obsolete': obsolete
+            'is_obsolete': obsolete,
+            'is_superseded': superseded,
+            'superseded_by': superseded_by
         }
 
     def _parse_xml_pricing(self, xml_item):
@@ -461,6 +472,7 @@ class ParsedProductFitment(object):
     def _add_years_to_fitment_keys(self):
         part_storage = self.part_fitment_storage['storage_objects']
         test_fitment = dict()
+
         def add_new_fitment_key(_fitment, _fitment_data, _orig_key, _start_year, _end_year):
             _fitment_data['start_year'] = _start_year
             _fitment_data['end_year'] = _end_year

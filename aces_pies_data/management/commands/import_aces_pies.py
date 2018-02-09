@@ -6,8 +6,10 @@ import zipfile
 
 import pytz
 import sys
+
 from googleapiclient.http import MediaIoBaseDownload
 
+from aces_pies_data.management.import_utils import get_file_obj_from_zip, get_csv_lines, parse_file_name
 from aces_pies_data.models import ImportTracking, ImportTrackingType
 from aces_pies_data.util.aces_pies_parsing import PiesFileParser, AcesFileParser
 from aces_pies_data.util.aces_pies_storage import PiesDataStorage, AcesDataStorage, PiesCategoryDataStorage
@@ -26,7 +28,23 @@ class Command(BaseCommand):
     help = 'Imports aces pies data from a google drive folder'
 
     def handle(self, *args, **options):
+        max_attempts = 10
+        num_tries = 0
+        import_complete = False
         logger.info("Parsing aces pies data")
+        last_exception = None
+        while not import_complete and num_tries < max_attempts:
+            num_tries += 1
+            try:
+                self.do_import()
+                import_complete = True
+            except Exception as e:
+                logger.exception("There was a problem importing, trying again")
+                last_exception = e
+        if last_exception:
+            raise last_exception
+
+    def do_import(self):
         drive_service = build_google_service('drive', 'v3', ['https://www.googleapis.com/auth/drive'])
         files_to_process = self.get_files_to_process(drive_service)
         files_to_parse = files_to_process['files_to_parse']
@@ -47,7 +65,7 @@ class Command(BaseCommand):
                     logger.info(f"Downloading file {file_name} for {import_type} parsing")
                     file_bytes = self.download_file(drive_service, file_info['file']['id'])
                     with zipfile.ZipFile(file_bytes) as zip_file:
-                        file_obj = self.get_file_obj_from_zip(zip_file, import_type)
+                        file_obj = get_file_obj_from_zip(zip_file, import_type)
                         with zip_file.open(file_obj) as data_file:
                             if import_type == "pies":
                                 pies_file_parser = PiesFileParser(data_file, brand_short_name)
@@ -66,24 +84,11 @@ class Command(BaseCommand):
         for file_to_archive in files_to_archive:
             file_name = file_to_archive['file']['name']
             brand_short_name = file_to_archive['brand_short_name']
-            import_type = ImportTracking.DO_ARCHIVE
-            import_action = file_to_archive['import_type']
+            import_type = file_to_archive['import_type']
+            import_action = ImportTracking.DO_ARCHIVE
             with TrackingRecord(import_type, import_action, brand_short_name, file_name):
                 logger.info(f"Archiving file {file_name}")
                 archive_file(drive_service, file_to_archive['file']['id'], pending_folder_id, archived_folder_id)
-
-    def get_file_obj_from_zip(self, zip_file, import_type):
-        import_type_file = {
-            "pies_flat": "piesdata67.txt",
-            "aces": "n1parts.txt",
-            "pies": "pies67.xml"
-        }
-
-        for file_obj in zip_file.filelist:
-            if import_type_file[import_type] in file_obj.filename.lower():
-                return file_obj
-
-        raise ValueError(f"No file found for {import_type}")
 
     def get_files_to_process(self, drive_service):
         logging.info("Retrieving files to import")
@@ -108,39 +113,31 @@ class Command(BaseCommand):
 
         # loop through, pick latest dates
         # any dates prior get added to archive
-        file_name_regex = re.compile("(.+?)([0-9]{8})_(.+?).zip")
         for file in pending_files:
-            parsed_file_name = file_name_regex.search(file['name'])
-            brand_short_name = parsed_file_name.group(1)
-            file_date_string = parsed_file_name.group(2)
-            file_type = parsed_file_name.group(3)
-            file_date = datetime.datetime.strptime(file_date_string, '%Y%m%d').astimezone(pytz.timezone('US/Eastern'))
+            parsed_file_name = parse_file_name(file['name'])
+            brand_short_name = parsed_file_name['brand_short_name']
+            import_type = parsed_file_name['import_type']
+            file_date = parsed_file_name['file_date']
             file_lookup = None
-            if file_type == "N1":
+            if import_type == "aces":
                 file_lookup = aces_files
-                import_type = "aces"
-            elif file_type == "PIES67":
+            elif import_type == "pies":
                 file_lookup = pies_files
-                import_type = "pies"
-            elif file_type == "PIES67Flat":
+            elif import_type == "pies_flat":
                 file_lookup = pies_flat_files
-                import_type = "pies_flat"
             if file_lookup is not None:
+                file_data = {
+                    "import_type": import_type,
+                    "brand_short_name": brand_short_name,
+                    "file": file,
+                    "date": file_date
+                }
                 if brand_short_name not in file_lookup or file_lookup[brand_short_name]["date"] < file_date:
                     if brand_short_name in file_lookup:
-                        files_to_archive.append({
-                            "file": file_lookup[brand_short_name]['file'],
-                            "import_type": import_type,
-                            "brand_short_name": brand_short_name
-                        })
-                    file_lookup[brand_short_name] = {
-                        "import_type": import_type,
-                        "brand_short_name": brand_short_name,
-                        "file": file,
-                        "date": file_date
-                    }
+                        files_to_archive.append(file_data)
+                    file_lookup[brand_short_name] = file_data
                 else:
-                    files_to_archive.append(file)
+                    files_to_archive.append(file_data)
         return {
             "files_to_parse": list(pies_flat_files.values()) + list(pies_files.values()) + list(aces_files.values()),
             "files_to_archive": files_to_archive,
@@ -180,8 +177,3 @@ class TrackingRecord(object):
 
 def archive_file(drive_service, file_id, pending_folder_id, archived_folder_id):
     drive_service.files().update(fileId=file_id, addParents=archived_folder_id, removeParents=pending_folder_id).execute()
-
-
-def get_csv_lines(csv_file):
-    for line in csv_file:
-        yield line.decode("utf-8")
